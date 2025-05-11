@@ -2,5 +2,18 @@
 name = "atiour"
 version = "0.1.0"
 edition = "2021"
+authors = ["Wu Bingzheng <wubingzheng@gmail.com>"]
+description = "Fast gRPC server framework in blocking mode."
+license = "MIT"
+repository = "https://github.com/WuBingzheng/atiour"
+documentation = "https://docs.rs/atiour"
+keywords = ["grpc", "protobuf", "blocking"]
+categories = ["network-programming"]
 
 [dependencies]
+log = "0.4.27"
+loona-hpack = "0.4.3"
+prost = "0.13.5"
+
+[build-dependencies]
+prost-build = "0.13.5"
