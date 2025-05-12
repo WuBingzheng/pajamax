@@ -4,7 +4,6 @@ mod helloworld {
 
 use helloworld::*;
 
-#[derive(Clone)]
 struct MyGreeter();
 
 impl Greeter for MyGreeter {

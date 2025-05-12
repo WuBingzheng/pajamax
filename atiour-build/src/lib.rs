@@ -34,14 +34,21 @@ impl prost_build::ServiceGenerator for AtiourGen {
         writeln!(buf, "}}").unwrap();
 
         // struct ${Service}Server
-        writeln!(buf, "#[derive(Debug, Clone)]").unwrap();
+        writeln!(buf, "#[derive(Debug)]").unwrap();
         writeln!(
             buf,
-            "pub struct {}Server<T: {} + Clone> {{ inner: std::sync::Arc<T>, }}
-             impl<T: {} + Clone> {}Server<T> {{
+            "pub struct {}Server<T: {}> {{
+                 inner: std::sync::Arc<T>,
+             }}
+
+             impl<T: {}> {}Server<T> {{
                  pub fn new(inner: T) -> Self {{ Self {{ inner: inner.into() }} }}
+             }}
+
+             impl<T: {}> Clone for {}Server<T> {{
+                 fn clone (&self) -> Self {{ Self {{ inner: self.inner.clone() }} }}
              }}",
-            service.name, service.name, service.name, service.name
+            service.name, service.name, service.name, service.name, service.name, service.name
         )
         .unwrap();
 
@@ -49,7 +56,7 @@ impl prost_build::ServiceGenerator for AtiourGen {
             buf,
             "use prost::Message;
              impl<T> atiour::AtiourService for {}Server<T>
-             where T: {} + Clone
+             where T: {}
              {{
                  type Request = {}Request;
             ",
