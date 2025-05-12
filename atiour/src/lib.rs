@@ -70,14 +70,14 @@ fn handle_connection<S: AtiourService>(mut connection: TcpStream, srv: S) {
                     let stream_id = frame_head.stream_id;
                     let Some(parse_fn) = streams.remove(&stream_id) else {
                         warn!("DATA frame without HEADERS");
-                        break;
+                        return;
                     };
 
                     let request = match (parse_fn)(req_buf) {
                         Ok(request) => request,
                         Err(err) => {
                             warn!("fail in parse request: {:?}", err);
-                            break;
+                            return;
                         }
                     };
 
@@ -89,10 +89,20 @@ fn handle_connection<S: AtiourService>(mut connection: TcpStream, srv: S) {
                             build_status(stream_id, status, &mut hpack_encoder, &mut output);
                         }
                     }
+
+                    if output.len() > 16 * 1024 {
+                        build_window_update(req_data_len, &mut output);
+                        if let Err(err) = connection.write_all(&output) {
+                            info!("connection send fail: {:?}", err);
+                            return;
+                        }
+                        output.clear();
+                        req_data_len = 0;
+                    }
                 }
                 FrameKind::Headers => {
                     let Some(headers_buf) = process_headers(&frame_head, payload) else {
-                        break;
+                        return;
                     };
 
                     let mut parse_fn = None;
@@ -104,17 +114,17 @@ fn handle_connection<S: AtiourService>(mut connection: TcpStream, srv: S) {
                         }
                     }) {
                         warn!("fail in decode hpack: {:?}", err);
-                        break;
+                        return;
                     }
 
                     let Some(parse_fn) = parse_fn else {
                         warn!("miss :path header");
-                        break;
+                        return;
                     };
 
                     if streams.insert(frame_head.stream_id, parse_fn).is_some() {
                         info!("duplicate HEADERS frame");
-                        break;
+                        return;
                     }
                 }
                 k => trace!("omit other frames: {:?}", k),
@@ -124,10 +134,9 @@ fn handle_connection<S: AtiourService>(mut connection: TcpStream, srv: S) {
         // flush response
         if req_data_len != 0 || !output.is_empty() {
             build_window_update(req_data_len, &mut output);
-
             if let Err(err) = connection.write_all(&output) {
-                warn!("connection send error: {:?}", err);
-                break;
+                info!("connection send fail: {:?}", err);
+                return;
             }
             output.clear();
         }

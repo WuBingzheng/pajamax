@@ -5,7 +5,7 @@ use loona_hpack::Encoder;
 
 use log::*;
 
-use crate::status::Status;
+use crate::status::{Status, CODE_STR};
 
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -194,6 +194,9 @@ pub fn build_response<M: prost::Message>(
     hpack_encoder
         .encode_header_into((b"status", b"200"), output)
         .unwrap();
+    hpack_encoder
+        .encode_header_into((b"grpc-stauts", b"0"), output)
+        .unwrap();
 
     FrameHead::build(
         output.len() - start - FrameHead::SIZE,
@@ -240,11 +243,9 @@ pub fn build_status(
     hpack_encoder
         .encode_header_into((b"status", b"200"), output)
         .unwrap();
+    let code = CODE_STR[status.code as usize];
     hpack_encoder
-        .encode_header_into(
-            (b"grpc-status", (status.code as u8).to_string().as_bytes()),
-            output,
-        )
+        .encode_header_into((b"grpc-status", code.as_bytes()), output)
         .unwrap();
     hpack_encoder
         .encode_header_into((b"grpc-message", status.message.as_bytes()), output)
