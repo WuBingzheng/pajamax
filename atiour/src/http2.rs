@@ -1,8 +1,7 @@
-use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::net::TcpStream;
 
-use loona_hpack::{Decoder, Encoder};
+use loona_hpack::Encoder;
 
 use log::*;
 
@@ -41,22 +40,17 @@ impl FrameKind {
 }
 
 #[derive(Debug)]
-struct FrameHead {
-    len: usize,
-    flags: HeadFlags,
-    kind: FrameKind,
-    stream_id: u32,
-}
-
-fn parse_u32(buf: &[u8]) -> u32 {
-    let tmp: [u8; 4] = [buf[0], buf[1], buf[2], buf[3]];
-    u32::from_be_bytes(tmp)
+pub struct FrameHead {
+    pub len: usize,
+    pub flags: HeadFlags,
+    pub kind: FrameKind,
+    pub stream_id: u32,
 }
 
 impl FrameHead {
-    const SIZE: usize = 9;
+    pub const SIZE: usize = 9;
 
-    fn parse(buf: &[u8]) -> Option<Self> {
+    pub fn parse(buf: &[u8]) -> Option<Self> {
         if buf.len() < Self::SIZE {
             return None;
         }
@@ -82,20 +76,19 @@ impl FrameHead {
         output[3] = kind as u8;
         output[4] = flags;
 
-        let tmp = stream_id.to_be_bytes();
-        output[5..9].copy_from_slice(&tmp);
+        build_u32(stream_id, &mut output[5..9]);
     }
 
     fn skip_padded<'a, 'b>(&'a self, buf: &'b [u8]) -> Option<&'b [u8]> {
         if self.flags.is_padded() {
             if buf.len() < 1 {
-                info!("invalid frame for padded");
+                warn!("invalid frame for padded");
                 return None;
             }
             let pad_len = buf[0] as usize;
             let buf_len = buf.len();
             if buf_len <= 1 + pad_len {
-                info!("invalid frame for padded");
+                warn!("invalid frame for padded");
                 return None;
             }
             Some(&buf[1..buf_len - pad_len])
@@ -107,7 +100,7 @@ impl FrameHead {
     fn skip_priority<'a, 'b>(&'a self, buf: &'b [u8]) -> Option<&'b [u8]> {
         if self.flags.is_priority() {
             if buf.len() < 5 {
-                info!("invalid frame for padded");
+                warn!("invalid frame for padded");
                 return None;
             }
             Some(&buf[5..])
@@ -117,120 +110,25 @@ impl FrameHead {
     }
 }
 
-use crate::AtiourService;
-
-struct Stream<S: AtiourService> {
-    id: u32,
-    request_parse_fn: fn(&[u8]) -> Result<S::Request, prost::DecodeError>,
-}
-
-pub fn handle_connection<S: AtiourService>(mut connection: TcpStream, srv: S) {
-    if !handshake(&mut connection) {
-        return;
-    }
-
-    let mut hpack_decoder = Decoder::new();
-    let mut hpack_encoder = Encoder::new();
-
-    let mut input = Vec::new();
-    input.resize(16 * 1024, 0);
-
-    let mut output = Vec::with_capacity(16 * 1024);
-
-    let mut streams: HashMap<u32, Stream<S>> = HashMap::new();
-
-    let mut last_end = 0;
-    while let Ok(len) = connection.read(&mut input[last_end..]) {
-        if len == 0 {
-            trace!("connection closed");
-            break;
-        }
-        let end = last_end + len;
-
-        let mut pos = 0;
-        while let Some(frame_head) = FrameHead::parse(&input[pos..end]) {
-            let payload_start = pos + FrameHead::SIZE;
-            let payload_end = payload_start + frame_head.len;
-            let payload = &input[payload_start..payload_end];
-            pos = payload_end;
-
-            match frame_head.kind {
-                FrameKind::Data => {
-                    if let Some(req_buf) = process_data(&frame_head, payload) {
-                        let Some(stream) = streams.remove(&frame_head.stream_id) else {
-                            info!("DATA frame without HEADERS");
-                            break;
-                        };
-
-                        let Ok(request) = (stream.request_parse_fn)(req_buf) else {
-                            info!("fail in parse request");
-                            break;
-                        };
-
-                        let reply = srv.call(request);
-
-                        build_response(stream.id, reply, &mut hpack_encoder, &mut output);
-
-                        if connection.write_all(&output).is_err() {
-                            info!("connection send error");
-                            break;
-                        }
-                    }
-                }
-                FrameKind::Headers => {
-                    let Some(request_parse_fn) =
-                        process_headers::<S>(&frame_head, payload, &mut hpack_decoder)
-                    else {
-                        break;
-                    };
-
-                    let stream = Stream {
-                        id: frame_head.stream_id,
-                        request_parse_fn,
-                    };
-
-                    if streams.insert(frame_head.stream_id, stream).is_some() {
-                        info!("duplicate HEADERS frame");
-                        break;
-                    }
-                }
-                _ => (), //println!("unknown frame: {:?}", head.kind),
-            }
-        }
-
-        if pos == 0 {
-            error!("too long frame, we current support 16K by now.");
-            return;
-        }
-        if pos < end {
-            trace!("not complete: {pos} {end}");
-            input.copy_within(pos..end, 0);
-            last_end = end - pos;
-        } else {
-            last_end = 0;
-        }
-    }
-}
-
-fn handshake(stream: &mut TcpStream) -> bool {
+pub fn handshake(stream: &mut TcpStream) -> bool {
     let mut input = vec![0; 24];
     let Ok(len) = stream.read(&mut input) else {
-        info!("read fail at handshake");
+        warn!("read fail at handshake");
         return false;
     };
     if len != 24 {
-        info!("too short handshake: {len}");
+        warn!("too short handshake: {len}");
         return false;
     }
     if input != *b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n" {
-        info!("invalid handshake message ({len}): {:?}", &input);
+        warn!("invalid handshake message ({len}): {:?}", &input);
         return false;
     }
     true
 }
 
 #[derive(Debug, Copy, Clone)]
-struct HeadFlags(u8);
+pub struct HeadFlags(u8);
 impl HeadFlags {
     const END_STREAM: u8 = 0x1;
     const END_HEADERS: u8 = 0x4;
@@ -254,11 +152,7 @@ impl HeadFlags {
     }
 }
 
-fn process_headers<S: AtiourService>(
-    frame_head: &FrameHead,
-    input: &[u8],
-    hpack_decoder: &mut Decoder,
-) -> Option<fn(&[u8]) -> Result<S::Request, prost::DecodeError>> {
+pub fn process_headers<'a, 'b>(frame_head: &'a FrameHead, input: &'b [u8]) -> Option<&'b [u8]> {
     if !frame_head.flags.is_end_headers() {
         error!("we do not support multiple HEADERS frames for one frame");
         return None;
@@ -270,35 +164,24 @@ fn process_headers<S: AtiourService>(
     let input = frame_head.skip_padded(input)?;
     let input = frame_head.skip_priority(input)?;
 
-    let mut request_parse_fn = None;
-    hpack_decoder
-        .decode_with_cb(input, |key, value| {
-            if key.as_ref() == b":path" {
-                let path = value.as_ref();
-                trace!("read path: {:?}", std::str::from_utf8(path));
-                request_parse_fn = S::request_parse_fn_by_path(path);
-            }
-        })
-        .ok()?;
-
-    request_parse_fn
+    Some(input)
 }
 
-fn process_data<'a, 'b>(frame_head: &'a FrameHead, buf: &'b [u8]) -> Option<&'b [u8]> {
+pub fn process_data<'a, 'b>(frame_head: &'a FrameHead, buf: &'b [u8]) -> Option<&'b [u8]> {
     let buf = frame_head.skip_padded(buf)?;
 
     if frame_head.len == 0 {
         None
     } else if frame_head.len < 5 {
-        info!("not complete grpc message header");
+        warn!("not complete grpc message header");
         None
     } else {
         Some(&buf[5..])
     }
 }
 
-fn build_response<M: prost::Message>(
-    stream_id: u32,
+pub fn build_response<M: prost::Message>(
+    frame_head: &FrameHead,
     reply: M,
     hpack_encoder: &mut Encoder,
     output: &mut Vec<u8>,
@@ -314,7 +197,7 @@ fn build_response<M: prost::Message>(
         output.len() - start - FrameHead::SIZE,
         FrameKind::Headers,
         HeadFlags::END_HEADERS,
-        stream_id,
+        frame_head.stream_id,
         &mut output[start..],
     );
 
@@ -333,10 +216,32 @@ fn build_response<M: prost::Message>(
         payload_len,
         FrameKind::Data,
         HeadFlags::END_STREAM,
-        stream_id,
+        frame_head.stream_id,
         &mut output[data_start..],
     );
 
-    let tmp = (msg_len as u32).to_be_bytes();
-    output[payload_start + 1..payload_start + 5].copy_from_slice(&tmp);
+    build_u32(
+        msg_len as u32,
+        &mut output[payload_start + 1..payload_start + 5],
+    );
+
+    // WINDOW_UPDATE
+    let start = output.len();
+    output.resize(start + FrameHead::SIZE + 4, 0);
+
+    FrameHead::build(4, FrameKind::WindowUpdate, 0, 0, &mut output[start..]);
+
+    build_u32(
+        frame_head.len as u32,
+        &mut output[start + FrameHead::SIZE..],
+    );
+}
+
+fn parse_u32(buf: &[u8]) -> u32 {
+    let tmp: [u8; 4] = [buf[0], buf[1], buf[2], buf[3]];
+    u32::from_be_bytes(tmp)
+}
+fn build_u32(n: u32, buf: &mut [u8]) {
+    let tmp = n.to_be_bytes();
+    buf.copy_from_slice(&tmp);
 }
