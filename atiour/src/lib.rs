@@ -50,6 +50,8 @@ fn handle_connection<S: AtiourService>(mut connection: TcpStream, srv: S) {
         }
         let end = last_end + len;
 
+        let mut req_data_len = 0; // for WINDOW_UPDATE
+
         let mut pos = 0;
         while let Some(frame_head) = FrameHead::parse(&input[pos..end]) {
             let payload_start = pos + FrameHead::SIZE;
@@ -59,6 +61,8 @@ fn handle_connection<S: AtiourService>(mut connection: TcpStream, srv: S) {
 
             match frame_head.kind {
                 FrameKind::Data => {
+                    req_data_len += frame_head.len;
+
                     let Some(req_buf) = process_data(&frame_head, payload) else {
                         continue; // empty DATA with END_STREAM flag
                     };
@@ -85,14 +89,6 @@ fn handle_connection<S: AtiourService>(mut connection: TcpStream, srv: S) {
                             build_status(stream_id, status, &mut hpack_encoder, &mut output);
                         }
                     }
-
-                    build_window_update(frame_head.len, &mut output);
-
-                    if let Err(err) = connection.write_all(&output) {
-                        warn!("connection send error: {:?}", err);
-                        break;
-                    }
-                    output.clear();
                 }
                 FrameKind::Headers => {
                     let Some(headers_buf) = process_headers(&frame_head, payload) else {
@@ -125,6 +121,18 @@ fn handle_connection<S: AtiourService>(mut connection: TcpStream, srv: S) {
             }
         }
 
+        // flush response
+        if req_data_len != 0 || !output.is_empty() {
+            build_window_update(req_data_len, &mut output);
+
+            if let Err(err) = connection.write_all(&output) {
+                warn!("connection send error: {:?}", err);
+                break;
+            }
+            output.clear();
+        }
+
+        // for next loop
         if pos == 0 {
             warn!("too long frame, we current support 16K by now.");
             return;
