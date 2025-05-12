@@ -18,7 +18,7 @@ impl prost_build::ServiceGenerator for AtiourGen {
         for m in service.methods.iter() {
             writeln!(
                 buf,
-                "    fn {} (&self, req: {}) -> {};", // TODO: Result<>
+                "    fn {} (&self, req: {}) -> Result<{}, atiour::status::Status>;",
                 m.name, m.input_type, m.output_type
             )
             .unwrap();
@@ -52,6 +52,7 @@ impl prost_build::ServiceGenerator for AtiourGen {
         )
         .unwrap();
 
+        // impl atiour::AtiourService for ${Service}
         writeln!(
             buf,
             "use prost::Message;
@@ -88,7 +89,7 @@ impl prost_build::ServiceGenerator for AtiourGen {
         // impl AtiourService::call()
         writeln!(
             buf,
-            "fn call(&self, request: Self::Request) -> impl prost::Message {{
+            "fn call(&self, request: Self::Request) -> Result<impl prost::Message, atiour::status::Status> {{
                  match request {{"
         )
         .unwrap();

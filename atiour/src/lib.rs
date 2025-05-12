@@ -7,8 +7,10 @@ use log::*;
 use loona_hpack::{Decoder, Encoder};
 
 mod http2;
+pub mod status;
 
 use crate::http2::*;
+use crate::status::Status;
 
 type ParseFn<R> = fn(&[u8]) -> Result<R, prost::DecodeError>;
 
@@ -22,7 +24,7 @@ pub trait AtiourService {
     fn request_parse_fn_by_path(path: &[u8]) -> Option<ParseFn<Self::Request>>;
 
     // Call methods' handlers on the request, and return response.
-    fn call(&self, request: Self::Request) -> impl prost::Message;
+    fn call(&self, request: Self::Request) -> Result<impl prost::Message, Status>;
 }
 
 fn handle_connection<S: AtiourService>(mut connection: TcpStream, srv: S) {
@@ -60,7 +62,9 @@ fn handle_connection<S: AtiourService>(mut connection: TcpStream, srv: S) {
                     let Some(req_buf) = process_data(&frame_head, payload) else {
                         continue; // empty DATA with END_STREAM flag
                     };
-                    let Some(parse_fn) = streams.remove(&frame_head.stream_id) else {
+
+                    let stream_id = frame_head.stream_id;
+                    let Some(parse_fn) = streams.remove(&stream_id) else {
                         warn!("DATA frame without HEADERS");
                         break;
                     };
@@ -73,9 +77,16 @@ fn handle_connection<S: AtiourService>(mut connection: TcpStream, srv: S) {
                         }
                     };
 
-                    let reply = srv.call(request);
+                    match srv.call(request) {
+                        Ok(reply) => {
+                            build_response(stream_id, reply, &mut hpack_encoder, &mut output);
+                        }
+                        Err(status) => {
+                            build_status(stream_id, status, &mut hpack_encoder, &mut output);
+                        }
+                    }
 
-                    build_response(&frame_head, reply, &mut hpack_encoder, &mut output);
+                    build_window_update(frame_head.len, &mut output);
 
                     if let Err(err) = connection.write_all(&output) {
                         warn!("connection send error: {:?}", err);

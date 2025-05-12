@@ -5,6 +5,8 @@ use loona_hpack::Encoder;
 
 use log::*;
 
+use crate::status::Status;
+
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum FrameKind {
@@ -181,7 +183,7 @@ pub fn process_data<'a, 'b>(frame_head: &'a FrameHead, buf: &'b [u8]) -> Option<
 }
 
 pub fn build_response<M: prost::Message>(
-    frame_head: &FrameHead,
+    stream_id: u32,
     reply: M,
     hpack_encoder: &mut Encoder,
     output: &mut Vec<u8>,
@@ -197,7 +199,7 @@ pub fn build_response<M: prost::Message>(
         output.len() - start - FrameHead::SIZE,
         FrameKind::Headers,
         HeadFlags::END_HEADERS,
-        frame_head.stream_id,
+        stream_id,
         &mut output[start..],
     );
 
@@ -216,7 +218,7 @@ pub fn build_response<M: prost::Message>(
         payload_len,
         FrameKind::Data,
         HeadFlags::END_STREAM,
-        frame_head.stream_id,
+        stream_id,
         &mut output[data_start..],
     );
 
@@ -224,17 +226,46 @@ pub fn build_response<M: prost::Message>(
         msg_len as u32,
         &mut output[payload_start + 1..payload_start + 5],
     );
+}
 
-    // WINDOW_UPDATE
+pub fn build_status(
+    stream_id: u32,
+    status: Status,
+    hpack_encoder: &mut Encoder,
+    output: &mut Vec<u8>,
+) {
+    // HEADERS
+    let start = output.len();
+    output.resize(start + FrameHead::SIZE, 0);
+    hpack_encoder
+        .encode_header_into((b"status", b"200"), output)
+        .unwrap();
+    hpack_encoder
+        .encode_header_into(
+            (b"grpc-status", (status.code as u8).to_string().as_bytes()),
+            output,
+        )
+        .unwrap();
+    hpack_encoder
+        .encode_header_into((b"grpc-message", status.message.as_bytes()), output)
+        .unwrap();
+
+    FrameHead::build(
+        output.len() - start - FrameHead::SIZE,
+        FrameKind::Headers,
+        HeadFlags::END_HEADERS,
+        stream_id,
+        &mut output[start..],
+    );
+}
+
+pub fn build_window_update(len: usize, output: &mut Vec<u8>) {
     let start = output.len();
     output.resize(start + FrameHead::SIZE + 4, 0);
 
     FrameHead::build(4, FrameKind::WindowUpdate, 0, 0, &mut output[start..]);
 
-    build_u32(
-        frame_head.len as u32,
-        &mut output[start + FrameHead::SIZE..],
-    );
+    build_u32(len as u32, &mut output[start + FrameHead::SIZE..]);
 }
 
 fn parse_u32(buf: &[u8]) -> u32 {

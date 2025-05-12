@@ -1,3 +1,5 @@
+use atiour::status::Status;
+
 mod helloworld {
     include!(concat!(env!("OUT_DIR"), "/helloworld.rs"));
 }
@@ -7,10 +9,10 @@ use helloworld::*;
 struct MyGreeter();
 
 impl Greeter for MyGreeter {
-    fn say_hello(&self, req: HelloRequest) -> HelloReply {
-        HelloReply {
+    fn say_hello(&self, req: HelloRequest) -> Result<HelloReply, Status> {
+        Ok(HelloReply {
             message: format!("Hello {}!", req.name),
-        }
+        })
     }
 }
 
