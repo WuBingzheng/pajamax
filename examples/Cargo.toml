@@ -1,0 +1,17 @@
+[package]
+authors = ["Wu Bingzheng <wubingzheng@gmail.com>"]
+edition = "2021"
+license = "MIT"
+name = "examples"
+
+[[bin]]
+name = "helloworld"
+path = "src/helloworld.rs"
+
+[dependencies]
+atiour = {version="*", path="../atiour/"}
+prost = "0.13.5"
+
+[build-dependencies]
+prost-build = "0.13.5"
+atiour-build = {version="*", path="../atiour-build/"}
