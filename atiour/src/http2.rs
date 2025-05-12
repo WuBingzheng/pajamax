@@ -52,11 +52,6 @@ fn parse_u32(buf: &[u8]) -> u32 {
     let tmp: [u8; 4] = [buf[0], buf[1], buf[2], buf[3]];
     u32::from_be_bytes(tmp)
 }
-fn parse_u64(buf: &[u8]) -> u64 {
-    let mut tmp: [u8; 8] = [0; 8];
-    tmp.copy_from_slice(&buf[..8]);
-    u64::from_be_bytes(tmp)
-}
 
 impl FrameHead {
     const SIZE: usize = 9;
@@ -122,20 +117,14 @@ impl FrameHead {
     }
 }
 
-pub trait AtyourService {
-    type Request;
-    fn request_parse_fn_by_path(
-        path: &[u8],
-    ) -> Option<fn(&[u8]) -> Result<Self::Request, prost::DecodeError>>;
-    fn call(&self, request: Self::Request) -> impl prost::Message;
-}
+use crate::AtiourService;
 
-struct Stream<S: AtyourService> {
+struct Stream<S: AtiourService> {
     id: u32,
     request_parse_fn: fn(&[u8]) -> Result<S::Request, prost::DecodeError>,
 }
 
-pub fn handle_connection<S: AtyourService>(mut connection: TcpStream, srv: S) {
+pub fn handle_connection<S: AtiourService>(mut connection: TcpStream, srv: S) {
     if !handshake(&mut connection) {
         return;
     }
@@ -146,8 +135,7 @@ pub fn handle_connection<S: AtyourService>(mut connection: TcpStream, srv: S) {
     let mut input = Vec::new();
     input.resize(16 * 1024, 0);
 
-    let mut output = Vec::new();
-    output.resize(16 * 1024, 0);
+    let mut output = Vec::with_capacity(16 * 1024);
 
     let mut streams: HashMap<u32, Stream<S>> = HashMap::new();
 
@@ -158,8 +146,6 @@ pub fn handle_connection<S: AtyourService>(mut connection: TcpStream, srv: S) {
             break;
         }
         let end = last_end + len;
-
-        //let mut x_method: Option<fn(&[u8]) -> Result<GreeterMethod, prost::DecodeError>> = None;
 
         let mut pos = 0;
         while let Some(frame_head) = FrameHead::parse(&input[pos..end]) {
@@ -268,7 +254,7 @@ impl HeadFlags {
     }
 }
 
-fn process_headers<S: AtyourService>(
+fn process_headers<S: AtiourService>(
     frame_head: &FrameHead,
     input: &[u8],
     hpack_decoder: &mut Decoder,
@@ -329,7 +315,7 @@ fn build_response<M: prost::Message>(
         FrameKind::Headers,
         HeadFlags::END_HEADERS,
         stream_id,
-        output,
+        &mut output[start..],
     );
 
     // DATA
