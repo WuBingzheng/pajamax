@@ -7,6 +7,7 @@ use log::*;
 use loona_hpack::Encoder;
 
 mod hpack_decoder;
+mod huffman;
 //mod hpack_encoder;
 mod http2;
 pub mod status;

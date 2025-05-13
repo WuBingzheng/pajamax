@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::huffman;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum DecoderError {
     InvalidRepresentation,
@@ -140,6 +142,7 @@ use crate::ParseFn;
 pub struct Decoder<R> {
     next_index: usize,
     indexed_paths: HashMap<usize, ParseFn<R>>,
+    huffman_tmp_output: Vec<u8>,
 }
 
 impl<R> Decoder<R> {
@@ -148,6 +151,7 @@ impl<R> Decoder<R> {
         Decoder {
             next_index: 62,
             indexed_paths: HashMap::new(),
+            huffman_tmp_output: Vec::with_capacity(32),
         }
     }
 
@@ -173,7 +177,7 @@ impl<R> Decoder<R> {
                     adv
                 }
                 LiteralWithIndexing => {
-                    let (path, adv) = decode_literal(buf, true)?;
+                    let (path, adv) = decode_literal(buf, true, &mut self.huffman_tmp_output)?;
 
                     if let Some(path) = path {
                         let Some(request_parse_fn) = request_parse_fn_by_path(path) else {
@@ -187,7 +191,7 @@ impl<R> Decoder<R> {
                     adv
                 }
                 LiteralWithoutIndexing | LiteralNeverIndexed => {
-                    let (path, adv) = decode_literal(buf, false)?;
+                    let (path, adv) = decode_literal(buf, false, &mut self.huffman_tmp_output)?;
 
                     if let Some(path) = path {
                         let Some(request_parse_fn) = request_parse_fn_by_path(path) else {
@@ -209,25 +213,29 @@ impl<R> Decoder<R> {
     }
 }
 
-fn decode_literal(mut buf: &[u8], index: bool) -> Result<(Option<&[u8]>, usize), DecoderError> {
+fn decode_literal<'a>(
+    mut buf: &'a [u8],
+    index: bool,
+    huffman_tmp_output: &'a mut Vec<u8>,
+) -> Result<(Option<&'a [u8]>, usize), DecoderError> {
     let prefix = if index { 6 } else { 4 };
 
     // Extract the table index for the name, or 0 if not indexed
     let (table_idx, index_adv) = decode_int(buf, prefix)?;
     buf = &buf[index_adv..];
 
-    // First, read the header name
     if table_idx == 0 {
-        let (name_str, name_adv) = decode_string(buf)?;
-        let (value_str, value_adv) = decode_string(&buf[name_adv..])?;
-        let adv = index_adv + name_adv + value_adv;
-        if name_str == b":path" {
-            Ok((Some(value_str), adv))
-        } else {
-            Ok((None, adv))
-        }
+        // parse name and value
+        let (name_str, name_adv) = decode_string(buf, huffman_tmp_output)?;
+        let is_path = name_str == b":path"; // mark this before parsing value
+        let (value_str, value_adv) = decode_string(&buf[name_adv..], huffman_tmp_output)?;
+
+        let ret = if is_path { Some(value_str) } else { None };
+        Ok((ret, index_adv + name_adv + value_adv))
     } else {
-        let (value_str, value_adv) = decode_string(buf)?;
+        // name is indexed, so parse value only
+        let (value_str, value_adv) = decode_string(buf, huffman_tmp_output)?;
+
         let adv = index_adv + value_adv;
         if table_idx == 4 || table_idx == 5 {
             Ok((Some(value_str), adv))
@@ -237,7 +245,10 @@ fn decode_literal(mut buf: &[u8], index: bool) -> Result<(Option<&[u8]>, usize),
     }
 }
 
-fn decode_string(buf: &[u8]) -> Result<(&[u8], usize), DecoderError> {
+fn decode_string<'a>(
+    buf: &'a [u8],
+    huffman_tmp_output: &'a mut Vec<u8>,
+) -> Result<(&'a [u8], usize), DecoderError> {
     if buf.is_empty() {
         return Err(DecoderError::NeedMore);
     }
@@ -252,11 +263,15 @@ fn decode_string(buf: &[u8]) -> Result<(&[u8], usize), DecoderError> {
         return Err(DecoderError::NeedMore);
     }
 
+    let end = adv + len;
+    let msg = &buf[adv..end];
+
     if huff {
-        todo!("huffman")
+        huffman_tmp_output.clear();
+        huffman::decode(msg, huffman_tmp_output)?;
+        Ok((huffman_tmp_output, end))
     } else {
-        let end = adv + len;
-        Ok((&buf[adv..end], end))
+        Ok((msg, end))
     }
 }
 
