@@ -6,12 +6,7 @@ use crate::huffman;
 pub enum DecoderError {
     InvalidRepresentation,
     InvalidIntegerPrefix,
-    InvalidTableIndex,
     InvalidHuffmanCode,
-    InvalidUtf8,
-    InvalidStatusCode,
-    InvalidPseudoheader,
-    InvalidMaxDynamicSize,
     IntegerOverflow,
     NeedMore,
 

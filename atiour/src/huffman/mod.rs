@@ -35,6 +35,7 @@ pub fn decode(src: &[u8], buf: &mut Vec<u8>) -> Result<(), DecoderError> {
     Ok(())
 }
 
+#[allow(unused)]
 pub fn encode(src: &[u8], dst: &mut Vec<u8>) {
     let mut bits: u64 = 0;
     let mut bits_left = 40;
