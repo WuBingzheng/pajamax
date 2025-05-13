@@ -4,15 +4,17 @@ use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::thread;
 
 use log::*;
-use loona_hpack::{Decoder, Encoder};
+use loona_hpack::Encoder;
 
+mod hpack_decoder;
+//mod hpack_encoder;
 mod http2;
 pub mod status;
 
 use crate::http2::*;
 use crate::status::Status;
 
-type ParseFn<R> = fn(&[u8]) -> Result<R, prost::DecodeError>;
+pub type ParseFn<R> = fn(&[u8]) -> Result<R, prost::DecodeError>;
 
 // `atiour-build` crate should implement this for service in .proto file.
 pub trait AtiourService {
@@ -32,7 +34,7 @@ fn handle_connection<S: AtiourService>(mut connection: TcpStream, srv: S) {
         return;
     }
 
-    let mut hpack_decoder = Decoder::new();
+    let mut hpack_decoder = hpack_decoder::Decoder::new();
     let mut hpack_encoder = Encoder::new();
 
     let mut input = Vec::new();
@@ -105,20 +107,10 @@ fn handle_connection<S: AtiourService>(mut connection: TcpStream, srv: S) {
                         return;
                     };
 
-                    let mut parse_fn = None;
-                    if let Err(err) = hpack_decoder.decode_with_cb(headers_buf, |key, value| {
-                        if key.as_ref() == b":path" {
-                            let path = value.as_ref();
-                            trace!("read path: {:?}", std::str::from_utf8(path));
-                            parse_fn = S::request_parse_fn_by_path(path);
-                        }
-                    }) {
-                        warn!("fail in decode hpack: {:?}", err);
-                        return;
-                    }
-
-                    let Some(parse_fn) = parse_fn else {
-                        warn!("miss :path header");
+                    let Ok(parse_fn) =
+                        hpack_decoder.find_path(headers_buf, S::request_parse_fn_by_path)
+                    else {
+                        warn!("fain in find path");
                         return;
                     };
 
