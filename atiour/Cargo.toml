@@ -12,7 +12,6 @@ categories = ["network-programming"]
 
 [dependencies]
 log = "0.4.27"
-loona-hpack = "0.4.3"
 prost = "0.13.5"
 
 [build-dependencies]

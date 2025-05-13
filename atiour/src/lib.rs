@@ -4,12 +4,11 @@ use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::thread;
 
 use log::*;
-use loona_hpack::Encoder;
 
 mod hpack_decoder;
-mod huffman;
-//mod hpack_encoder;
+mod hpack_encoder;
 mod http2;
+mod huffman;
 pub mod status;
 
 use crate::http2::*;
@@ -36,7 +35,7 @@ fn handle_connection<S: AtiourService>(mut connection: TcpStream, srv: S) {
     }
 
     let mut hpack_decoder = hpack_decoder::Decoder::new();
-    let mut hpack_encoder = Encoder::new();
+    let mut hpack_encoder = hpack_encoder::Encoder::new();
 
     let mut input = Vec::new();
     input.resize(16 * 1024, 0);
