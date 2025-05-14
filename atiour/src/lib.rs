@@ -55,21 +55,29 @@ fn handle_connection<S: AtiourService>(mut connection: TcpStream, srv: S) {
         let mut req_data_len = 0; // for WINDOW_UPDATE
 
         let mut pos = 0;
-        while let Some(frame_head) = FrameHead::parse(&input[pos..end]) {
-            let payload_start = pos + FrameHead::SIZE;
-            let payload_end = payload_start + frame_head.len;
-            let payload = &input[payload_start..payload_end];
-            pos = payload_end; // for next loop
+        while let Some(frame) = Frame::parse(&input[pos..end]) {
+            pos += Frame::HEAD_SIZE + frame.len; // for next loop
 
-            match frame_head.kind {
+            match frame.kind {
                 FrameKind::Data => {
-                    req_data_len += frame_head.len;
+                    req_data_len += frame.len;
 
-                    let Some(req_buf) = process_data(&frame_head, payload) else {
+                    let Some(req_buf) = frame.process_data() else {
                         continue; // empty DATA with END_STREAM flag
                     };
 
-                    let stream_id = frame_head.stream_id;
+                    // grpc-level-protocal
+                    if req_buf.len() == 0 {
+                        continue;
+                    }
+                    if req_buf.len() < 5 {
+                        warn!("DATA frame invalid grpc-protocal");
+                        return;
+                    }
+                    let req_buf = &req_buf[5..];
+
+                    // find the request-parse-fn
+                    let stream_id = frame.stream_id;
                     let Some(parse_fn) = streams.remove(&stream_id) else {
                         warn!("DATA frame without HEADERS");
                         return;
@@ -83,6 +91,7 @@ fn handle_connection<S: AtiourService>(mut connection: TcpStream, srv: S) {
                         }
                     };
 
+                    // call the handler!
                     match srv.call(request) {
                         Ok(reply) => {
                             build_response(stream_id, reply, &mut hpack_encoder, &mut output);
@@ -92,7 +101,8 @@ fn handle_connection<S: AtiourService>(mut connection: TcpStream, srv: S) {
                         }
                     }
 
-                    if output.len() > 16 * 1024 {
+                    // flush response
+                    if output.len() > output.capacity() * 9 / 10 {
                         build_window_update(req_data_len, &mut output);
                         if let Err(err) = connection.write_all(&output) {
                             info!("connection send fail: {:?}", err);
@@ -103,18 +113,20 @@ fn handle_connection<S: AtiourService>(mut connection: TcpStream, srv: S) {
                     }
                 }
                 FrameKind::Headers => {
-                    let Some(headers_buf) = process_headers(&frame_head, payload) else {
+                    let Some(headers_buf) = frame.process_headers() else {
                         return;
                     };
 
-                    let Ok(parse_fn) =
-                        hpack_decoder.find_path(headers_buf, S::request_parse_fn_by_path)
-                    else {
-                        warn!("fain in find path");
-                        return;
-                    };
+                    let parse_fn =
+                        match hpack_decoder.find_path(headers_buf, S::request_parse_fn_by_path) {
+                            Ok(parse_fn) => parse_fn,
+                            Err(err) => {
+                                warn!("fain in find path: {:?}", err);
+                                return;
+                            }
+                        };
 
-                    if streams.insert(frame_head.stream_id, parse_fn).is_some() {
+                    if streams.insert(frame.stream_id, parse_fn).is_some() {
                         info!("duplicate HEADERS frame");
                         return;
                     }
