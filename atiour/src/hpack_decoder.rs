@@ -137,7 +137,7 @@ use crate::ParseFn;
 pub struct Decoder<R> {
     next_index: usize,
     indexed_paths: HashMap<usize, ParseFn<R>>,
-    huffman_tmp_output: Vec<u8>,
+    huffman_paths: HashMap<Vec<u8>, ParseFn<R>>,
 }
 
 impl<R> Decoder<R> {
@@ -146,7 +146,7 @@ impl<R> Decoder<R> {
         Decoder {
             next_index: 62,
             indexed_paths: HashMap::new(),
-            huffman_tmp_output: Vec::with_capacity(32),
+            huffman_paths: HashMap::new(),
         }
     }
 
@@ -172,13 +172,17 @@ impl<R> Decoder<R> {
                     adv
                 }
                 LiteralWithIndexing => {
-                    let (path, adv) = decode_literal(buf, true, &mut self.huffman_tmp_output)?;
+                    let (path, adv) = decode_literal_path(buf, true)?;
 
                     if let Some(path) = path {
+                        let mut tmp_decode_path_buf = Vec::new();
+                        let path = path.to_plain(&mut tmp_decode_path_buf)?;
+
                         let Some(request_parse_fn) = request_parse_fn_by_path(path) else {
                             return Err(DecoderError::UnknownPath);
                         };
                         find_path = Ok(request_parse_fn);
+
                         self.indexed_paths.insert(self.next_index, request_parse_fn);
                     }
                     self.next_index += 1;
@@ -186,13 +190,36 @@ impl<R> Decoder<R> {
                     adv
                 }
                 LiteralWithoutIndexing | LiteralNeverIndexed => {
-                    let (path, adv) = decode_literal(buf, false, &mut self.huffman_tmp_output)?;
+                    let (path, adv) = decode_literal_path(buf, false)?;
 
                     if let Some(path) = path {
-                        let Some(request_parse_fn) = request_parse_fn_by_path(path) else {
-                            return Err(DecoderError::InvalidRepresentation);
-                        };
-                        find_path = Ok(request_parse_fn);
+                        match path {
+                            OutStr::Plain(path) => {
+                                let Some(request_parse_fn) = request_parse_fn_by_path(path) else {
+                                    return Err(DecoderError::UnknownPath);
+                                };
+                                find_path = Ok(request_parse_fn);
+                            }
+
+                            OutStr::Huffman(huff_path) => match self.huffman_paths.get(huff_path) {
+                                Some(request_parse_fn) => {
+                                    find_path = Ok(*request_parse_fn);
+                                }
+                                None => {
+                                    let mut path = Vec::with_capacity(32);
+                                    huffman::decode(huff_path, &mut path)?;
+
+                                    let Some(request_parse_fn) = request_parse_fn_by_path(&path)
+                                    else {
+                                        return Err(DecoderError::UnknownPath);
+                                    };
+                                    self.huffman_paths
+                                        .insert(huff_path.to_vec(), request_parse_fn);
+
+                                    find_path = Ok(request_parse_fn);
+                                }
+                            },
+                        }
                     }
                     adv
                 }
@@ -208,11 +235,41 @@ impl<R> Decoder<R> {
     }
 }
 
-fn decode_literal<'a>(
+enum OutStr<'a> {
+    Plain(&'a [u8]),
+    Huffman(&'a [u8]),
+}
+
+impl<'a> OutStr<'a> {
+    fn eq_str(&self, s: &str) -> bool {
+        match self {
+            Self::Plain(out) => *out == s.as_bytes(),
+            Self::Huffman(out) => {
+                if out.len() > s.len() {
+                    return false;
+                }
+                let mut huffbuf = Vec::with_capacity(s.len());
+                huffman::encode(s.as_bytes(), &mut huffbuf);
+                out == &huffbuf
+            }
+        }
+    }
+
+    fn to_plain(&'a self, tmp_buf: &'a mut Vec<u8>) -> Result<&'a [u8], DecoderError> {
+        match self {
+            OutStr::Plain(plain) => Ok(plain),
+            OutStr::Huffman(huff) => {
+                huffman::decode(huff, tmp_buf)?;
+                Ok(tmp_buf)
+            }
+        }
+    }
+}
+
+fn decode_literal_path<'a>(
     mut buf: &'a [u8],
     index: bool,
-    huffman_tmp_output: &'a mut Vec<u8>,
-) -> Result<(Option<&'a [u8]>, usize), DecoderError> {
+) -> Result<(Option<OutStr<'a>>, usize), DecoderError> {
     let prefix = if index { 6 } else { 4 };
 
     // Extract the table index for the name, or 0 if not indexed
@@ -221,15 +278,19 @@ fn decode_literal<'a>(
 
     if table_idx == 0 {
         // parse name and value
-        let (name_str, name_adv) = decode_string(buf, huffman_tmp_output)?;
-        let is_path = name_str == b":path"; // mark this before parsing value
-        let (value_str, value_adv) = decode_string(&buf[name_adv..], huffman_tmp_output)?;
+        let (name_str, name_adv) = decode_string(buf)?;
+        let (value_str, value_adv) = decode_string(&buf[name_adv..])?;
 
-        let ret = if is_path { Some(value_str) } else { None };
-        Ok((ret, index_adv + name_adv + value_adv))
+        let adv = index_adv + name_adv + value_adv;
+
+        if name_str.eq_str(":path") {
+            Ok((Some(value_str), adv))
+        } else {
+            Ok((None, adv))
+        }
     } else {
         // name is indexed, so parse value only
-        let (value_str, value_adv) = decode_string(buf, huffman_tmp_output)?;
+        let (value_str, value_adv) = decode_string(buf)?;
 
         let adv = index_adv + value_adv;
         if table_idx == 4 || table_idx == 5 {
@@ -240,10 +301,7 @@ fn decode_literal<'a>(
     }
 }
 
-fn decode_string<'a>(
-    buf: &'a [u8],
-    huffman_tmp_output: &'a mut Vec<u8>,
-) -> Result<(&'a [u8], usize), DecoderError> {
+fn decode_string<'a>(buf: &'a [u8]) -> Result<(OutStr<'a>, usize), DecoderError> {
     if buf.is_empty() {
         return Err(DecoderError::NeedMore);
     }
@@ -262,11 +320,9 @@ fn decode_string<'a>(
     let msg = &buf[adv..end];
 
     if huff {
-        huffman_tmp_output.clear();
-        huffman::decode(msg, huffman_tmp_output)?;
-        Ok((huffman_tmp_output, end))
+        Ok((OutStr::Huffman(msg), end))
     } else {
-        Ok((msg, end))
+        Ok((OutStr::Plain(msg), end))
     }
 }
 
