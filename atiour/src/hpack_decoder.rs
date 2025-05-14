@@ -132,15 +132,15 @@ impl Representation {
     }
 }
 
-use crate::ParseFn;
+use crate::{AtiourService, ParseFn};
 
-pub struct Decoder<R> {
+pub struct Decoder<S: AtiourService> {
     next_index: usize,
-    indexed_paths: HashMap<usize, ParseFn<R>>,
-    huffman_paths: HashMap<Vec<u8>, ParseFn<R>>,
+    indexed_paths: HashMap<usize, ParseFn<S::Request>>,
+    huffman_paths: HashMap<Vec<u8>, ParseFn<S::Request>>,
 }
 
-impl<R> Decoder<R> {
+impl<S: AtiourService> Decoder<S> {
     /// Creates a new `Decoder` with all settings set to default values.
     pub fn new() -> Self {
         Decoder {
@@ -150,14 +150,10 @@ impl<R> Decoder<R> {
         }
     }
 
-    pub fn find_path(
-        &mut self,
-        mut buf: &[u8],
-        request_parse_fn_by_path: fn(&[u8]) -> Option<ParseFn<R>>,
-    ) -> Result<ParseFn<R>, DecoderError> {
+    pub fn find_path(&mut self, mut buf: &[u8]) -> Result<ParseFn<S::Request>, DecoderError> {
         use self::Representation::*;
 
-        let mut find_path: Result<ParseFn<R>, DecoderError> = Err(DecoderError::NoPathFound);
+        let mut find_path = Err(DecoderError::NoPathFound);
 
         while !buf.is_empty() {
             // At this point we are always at the beginning of the next block
@@ -178,7 +174,7 @@ impl<R> Decoder<R> {
                         let mut tmp_decode_path_buf = Vec::new();
                         let path = path.to_plain(&mut tmp_decode_path_buf)?;
 
-                        let Some(request_parse_fn) = request_parse_fn_by_path(path) else {
+                        let Some(request_parse_fn) = (S::request_parse_fn_by_path)(path) else {
                             return Err(DecoderError::UnknownPath);
                         };
                         find_path = Ok(request_parse_fn);
@@ -195,7 +191,8 @@ impl<R> Decoder<R> {
                     if let Some(path) = path {
                         match path {
                             OutStr::Plain(path) => {
-                                let Some(request_parse_fn) = request_parse_fn_by_path(path) else {
+                                let Some(request_parse_fn) = (S::request_parse_fn_by_path)(path)
+                                else {
                                     return Err(DecoderError::UnknownPath);
                                 };
                                 find_path = Ok(request_parse_fn);
@@ -209,7 +206,8 @@ impl<R> Decoder<R> {
                                     let mut path = Vec::with_capacity(32);
                                     huffman::decode(huff_path, &mut path)?;
 
-                                    let Some(request_parse_fn) = request_parse_fn_by_path(&path)
+                                    let Some(request_parse_fn) =
+                                        (S::request_parse_fn_by_path)(&path)
                                     else {
                                         return Err(DecoderError::UnknownPath);
                                     };

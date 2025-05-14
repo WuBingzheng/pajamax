@@ -22,7 +22,7 @@ pub struct Connection<S: AtiourService> {
     srv: S,
 
     streams: HashMap<u32, ParseFn<S::Request>>,
-    hpack_decoder: Decoder<S::Request>,
+    hpack_decoder: Decoder<S>,
     hpack_encoder: Encoder,
     req_data_len: usize, // for WINDOW_UPDATE
 }
@@ -138,10 +138,7 @@ impl<S: AtiourService> Connection<S> {
                     return;
                 };
 
-                let parse_fn = match self
-                    .hpack_decoder
-                    .find_path(headers_buf, S::request_parse_fn_by_path) // TODO use S in Decoder
-                {
+                let parse_fn = match self.hpack_decoder.find_path(headers_buf) {
                     Ok(parse_fn) => parse_fn,
                     Err(err) => {
                         warn!("fain in find path: {:?}", err);
