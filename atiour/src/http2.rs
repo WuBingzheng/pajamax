@@ -1,8 +1,7 @@
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
-use log::*;
-
+use crate::connection::ParseError;
 use crate::hpack_encoder::Encoder;
 use crate::status::Status;
 
@@ -52,6 +51,7 @@ pub struct Frame<'a> {
 impl<'a> Frame<'a> {
     pub const HEAD_SIZE: usize = 9;
 
+    // return None if the input buf is not complete
     pub fn parse(buf: &'a [u8]) -> Option<Self> {
         if buf.len() < Self::HEAD_SIZE {
             return None;
@@ -82,71 +82,60 @@ impl<'a> Frame<'a> {
         build_u32(stream_id, &mut output[5..9]);
     }
 
-    pub fn process_headers(&self) -> Option<&[u8]> {
+    pub fn process_headers(&self) -> Result<&[u8], ParseError> {
         if !self.flags.is_end_headers() {
-            error!("we do not support multiple HEADERS frames for one frame");
-            return None;
+            return Err(ParseError::InvalidHttp2("multiple HEADERS frames"));
         }
         if self.flags.is_end_stream() {
-            error!("expect DATA frame");
-            return None;
+            return Err(ParseError::InvalidHttp2("HEADERS frame with no DATA"));
         }
         let headers = self.skip_padded(self.payload)?;
         let headers = self.skip_priority(headers)?;
 
-        Some(headers)
+        Ok(headers)
     }
 
-    pub fn process_data(&self) -> Option<&[u8]> {
-        let data = self.skip_padded(self.payload)?;
-        Some(data)
+    pub fn process_data(&self) -> Result<&[u8], ParseError> {
+        self.skip_padded(self.payload)
     }
 
-    fn skip_padded<'b>(&self, buf: &'b [u8]) -> Option<&'b [u8]> {
+    fn skip_padded<'b>(&self, buf: &'b [u8]) -> Result<&'b [u8], ParseError> {
         if self.flags.is_padded() {
             if buf.len() < 1 {
-                warn!("invalid frame for padded");
-                return None;
+                return Err(ParseError::InvalidHttp2("invalid padded"));
             }
             let pad_len = buf[0] as usize;
             let buf_len = buf.len();
             if buf_len <= 1 + pad_len {
-                warn!("invalid frame for padded");
-                return None;
+                return Err(ParseError::InvalidHttp2("invalid padded"));
             }
-            Some(&buf[1..buf_len - pad_len])
+            Ok(&buf[1..buf_len - pad_len])
         } else {
-            Some(buf)
+            Ok(buf)
         }
     }
 
-    fn skip_priority<'b>(&self, buf: &'b [u8]) -> Option<&'b [u8]> {
+    fn skip_priority<'b>(&self, buf: &'b [u8]) -> Result<&'b [u8], ParseError> {
         if self.flags.is_priority() {
             if buf.len() < 5 {
-                warn!("invalid frame for padded");
-                return None;
+                return Err(ParseError::InvalidHttp2("invalid priority"));
             }
-            Some(&buf[5..])
+            Ok(&buf[5..])
         } else {
-            Some(buf)
+            Ok(buf)
         }
     }
 }
 
-pub fn handshake(connection: &mut TcpStream) -> bool {
+pub fn handshake(connection: &mut TcpStream) -> Result<(), ParseError> {
     // parse the magic
     let mut input = vec![0; 24];
-    let Ok(len) = connection.read(&mut input) else {
-        warn!("read fail at handshake");
-        return false;
-    };
+    let len = connection.read(&mut input)?;
     if len != 24 {
-        warn!("too short handshake: {len}");
-        return false;
+        return Err(ParseError::InvalidHttp2("too short handshake"));
     }
     if input != *b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n" {
-        warn!("invalid handshake message ({len}): {:?}", &input);
-        return false;
+        return Err(ParseError::InvalidHttp2("invalid handshake message"));
     }
 
     // send empty SETTINGS
@@ -154,12 +143,9 @@ pub fn handshake(connection: &mut TcpStream) -> bool {
     let mut output = Vec::new();
     output.resize(9, 0);
     Frame::build_head(0, FrameKind::Settings, 0, 0, &mut output);
-    let Ok(_) = connection.write_all(&output) else {
-        warn!("send fail at handshake");
-        return false;
-    };
+    connection.write_all(&output)?;
 
-    true
+    Ok(())
 }
 
 #[derive(Debug, Copy, Clone)]

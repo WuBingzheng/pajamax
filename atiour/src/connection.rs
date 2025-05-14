@@ -9,12 +9,28 @@ use crate::hpack_encoder::Encoder;
 use crate::http2::*;
 use crate::{AtiourService, ParseFn};
 
-pub(crate) enum ParseError {
-    InvalidHttp2(String),
-    InvalidHpack(String),
-    InvalidHuffman(String),
+#[allow(dead_code)]
+#[derive(Debug)]
+pub enum ParseError {
+    InvalidHttp2(&'static str),
+    InvalidHpack(&'static str),
+    InvalidHuffman,
+    InvalidProtobuf(prost::DecodeError),
+    IoFail(std::io::Error),
     UnknownMethod(String),
     NoPathSet,
+}
+
+impl From<std::io::Error> for ParseError {
+    fn from(io: std::io::Error) -> Self {
+        Self::IoFail(io)
+    }
+}
+
+impl From<prost::DecodeError> for ParseError {
+    fn from(de: prost::DecodeError) -> Self {
+        Self::InvalidProtobuf(de)
+    }
 }
 
 pub struct Connection<S: AtiourService> {
@@ -40,10 +56,8 @@ impl<S: AtiourService> Connection<S> {
         }
     }
 
-    pub fn handle(mut self) {
-        if !handshake(&mut self.c) {
-            return;
-        }
+    pub fn handle(mut self) -> Result<(), ParseError> {
+        handshake(&mut self.c)?;
 
         let mut input = Vec::new();
         input.resize(16 * 1024, 0);
@@ -61,22 +75,21 @@ impl<S: AtiourService> Connection<S> {
             let mut pos = 0;
             while let Some(frame) = Frame::parse(&input[pos..end]) {
                 pos += Frame::HEAD_SIZE + frame.len; // for next loop
-                self.handle_frame(&frame, &mut output);
+                self.handle_frame(&frame, &mut output)?;
 
                 if output.len() > 15 * 1024 {
-                    self.flush_response(&mut output);
+                    self.flush_response(&mut output)?;
                 }
             }
 
             // flush response
             if !output.is_empty() {
-                self.flush_response(&mut output);
+                self.flush_response(&mut output)?;
             }
 
             // for next loop
             if pos == 0 {
-                warn!("too long frame, we current support 16K by now.");
-                return;
+                return Err(ParseError::InvalidHttp2("too long frame"));
             }
             if pos < end {
                 trace!("not complete: {pos} {end}");
@@ -86,42 +99,32 @@ impl<S: AtiourService> Connection<S> {
                 last_end = 0;
             }
         }
+        Ok(())
     }
 
-    fn handle_frame(&mut self, frame: &Frame, output: &mut Vec<u8>) {
+    fn handle_frame(&mut self, frame: &Frame, output: &mut Vec<u8>) -> Result<(), ParseError> {
         match frame.kind {
             FrameKind::Data => {
                 self.req_data_len += frame.len;
 
-                let Some(req_buf) = frame.process_data() else {
-                    return; // empty DATA with END_STREAM flag
-                            // XXX continue
-                };
+                let req_buf = frame.process_data()?;
 
                 // grpc-level-protocal
                 if req_buf.len() == 0 {
-                    return; // continue
+                    return Ok(());
                 }
                 if req_buf.len() < 5 {
-                    warn!("DATA frame invalid grpc-protocal");
-                    return;
+                    return Err(ParseError::InvalidHttp2("DATA frame too short for grpc"));
                 }
                 let req_buf = &req_buf[5..];
 
                 // find the request-parse-fn
                 let stream_id = frame.stream_id;
                 let Some(parse_fn) = self.streams.remove(&stream_id) else {
-                    warn!("DATA frame without HEADERS");
-                    return;
+                    return Err(ParseError::InvalidHttp2("DATA frame without HEADERS"));
                 };
 
-                let request = match (parse_fn)(req_buf) {
-                    Ok(request) => request,
-                    Err(err) => {
-                        warn!("fail in parse request: {:?}", err);
-                        return;
-                    }
-                };
+                let request = (parse_fn)(req_buf)?;
 
                 // call the handler!
                 match self.srv.call(request) {
@@ -134,34 +137,27 @@ impl<S: AtiourService> Connection<S> {
                 }
             }
             FrameKind::Headers => {
-                let Some(headers_buf) = frame.process_headers() else {
-                    return;
-                };
+                let headers_buf = frame.process_headers()?;
 
-                let parse_fn = match self.hpack_decoder.find_path(headers_buf) {
-                    Ok(parse_fn) => parse_fn,
-                    Err(err) => {
-                        warn!("fain in find path: {:?}", err);
-                        return;
-                    }
-                };
+                let parse_fn = self.hpack_decoder.find_path(headers_buf)?;
 
                 if self.streams.insert(frame.stream_id, parse_fn).is_some() {
-                    info!("duplicate HEADERS frame");
-                    return;
+                    return Err(ParseError::InvalidHttp2("duplicated HEADERS frame"));
                 }
             }
             k => trace!("omit other frames: {:?}", k),
         }
+
+        Ok(())
     }
 
-    fn flush_response(&mut self, output: &mut Vec<u8>) {
+    fn flush_response(&mut self, output: &mut Vec<u8>) -> Result<(), ParseError> {
         build_window_update(self.req_data_len, output);
-        if let Err(err) = self.c.write_all(output) {
-            info!("connection send fail: {:?}", err);
-            return;
-        }
+
+        self.c.write_all(output)?;
+
         output.clear();
         self.req_data_len = 0;
+        Ok(())
     }
 }
