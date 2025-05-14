@@ -1,10 +1,9 @@
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
-use crate::hpack_encoder::Encoder;
-
 use log::*;
 
+use crate::hpack_encoder::Encoder;
 use crate::status::Status;
 
 #[repr(u8)]
@@ -100,7 +99,6 @@ impl<'a> Frame<'a> {
 
     pub fn process_data(&self) -> Option<&[u8]> {
         let data = self.skip_padded(self.payload)?;
-
         Some(data)
     }
 
