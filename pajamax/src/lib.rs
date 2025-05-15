@@ -86,15 +86,15 @@
 //!
 //! # Usage
 //!
-//! The usage of Pajamax is very similar to that of tonic.
-//! See the [examples](https://github.com/WuBingzheng/pajamax/tree/main/examples)
-//! for more detail.
+//! The usage of Pajamax is very similar to that of Tonic.
+//!
+//! See [`pajamax-build`](https://docs.rs/pajamax-build) crate document for more detail.
 //!
 //! # Status
 //!
 //! Now Pajamax is still in the development stage. I publish it to get feedback.
 //!
-//! TODO:
+//! Todo list:
 //!
 //! - More test;
 //! - Configuration builder;
@@ -119,9 +119,10 @@ pub mod status;
 use crate::connection::Connection;
 use crate::status::Status;
 
+/// Parse the request body from input data.
 pub type ParseFn<R> = fn(&[u8]) -> Result<R, prost::DecodeError>;
 
-// `pajamax-build` crate should implement this for service in .proto file.
+/// Used by `pajamax-build` crate. It should implement this for service in .proto file.
 pub trait PajamaxService {
     type Request;
 
@@ -134,6 +135,7 @@ pub trait PajamaxService {
     fn call(&self, request: Self::Request) -> Result<impl prost::Message, Status>;
 }
 
+/// Start the server.
 pub fn serve<S, A>(srv: S, addr: A) -> std::io::Result<()>
 where
     S: PajamaxService + Clone + Send + Sync + 'static,
