@@ -105,3 +105,19 @@ impl prost_build::ServiceGenerator for AtiourGen {
         writeln!(buf, "}} }} }}").unwrap();
     }
 }
+
+use std::path::Path;
+
+/// Simple .proto compiling.
+///
+/// If you need more options, call the `prost_build::Config` directly
+/// with `.service_generator(Box::new(AtiourGen {}))`, just like this
+/// function's source code.
+pub fn compile_protos(
+    protos: &[impl AsRef<Path>],
+    includes: &[impl AsRef<Path>],
+) -> std::io::Result<()> {
+    prost_build::Config::new()
+        .service_generator(Box::new(AtiourGen {}))
+        .compile_protos(protos, includes)
+}
