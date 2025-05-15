@@ -100,7 +100,7 @@ Todo list:
 
 - More test;
 - Configuration builder;
-- Hooks like tower's layers.
+- Hooks like tower's Layer;
 - A new mode, under which network threads send the received requests to other
   threads for processing via a channel.
 
