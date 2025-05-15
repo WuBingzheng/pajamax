@@ -74,12 +74,15 @@
 //!
 //! Loss:
 //!
-//! - gRPC headers, such as `grpc-timeout`;
-//! - `tower`'s ecosystem of middleware, services, and utilities, compared to `tonic`.
+//! - No gRPC Streaming mode, but only Unary mode;
+//! - No gRPC headers, such as `grpc-timeout`;
+//! - No `tower`'s ecosystem of middleware, services, and utilities, compared to `tonic`.
 //!
 //! # Usage
 //!
-//! The usage of Atiour is very similar to that of tonic. See helloworld example for more detail.
+//! The usage of Atiour is very similar to that of tonic.
+//! See the [examples](https://github.com/WuBingzheng/atiour/tree/main/examples)
+//! for more detail.
 //!
 //! # Status
 //!
@@ -138,4 +141,22 @@ where
         thread::spawn(move || c.handle());
     }
     unreachable!();
+}
+
+/// Include generated proto server and client items.
+///
+/// You must specify the gRPC package name.
+///
+/// Examples:
+///
+/// ```rust,ignore
+/// mod pb {
+///     atiour::include_proto!("helloworld");
+/// }
+/// ```
+#[macro_export]
+macro_rules! include_proto {
+    ($package: tt) => {
+        include!(concat!(env!("OUT_DIR"), concat!("/", $package, ".rs")));
+    };
 }
