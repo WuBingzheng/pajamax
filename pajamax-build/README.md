@@ -11,11 +11,11 @@ The usage is very similar to that of Tonic.
 
    ```toml
    [dependencies]
-   pajamax = <pajamax-version>
-   prost = <prost-version>
+   pajamax = "0.1"
+   prost = "0.1"
 
    [build-dependencies]
-   pajamax-build = <pajamax-build-version>
+   pajamax-build = "0.1"
    ```
 
 2. Call `pajamax-build` in build.rs:
@@ -27,7 +27,7 @@ The usage is very similar to that of Tonic.
    }
    ```
 
-  If your want more options, call `prost_build` directly with `PajamaxGen`:
+   If your want more options, call `prost_build` directly with `PajamaxGen`:
 
    ```rust,ignore
    fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -41,4 +41,3 @@ The usage is very similar to that of Tonic.
 3. Call `pajamax` in your source code. See the
    [`helloworld`](https://github.com/WuBingzheng/pajamax/tree/main/examples/src/helloworld.rs)
    for more details.
-

@@ -9,11 +9,11 @@
 //!
 //!    ```toml
 //!    [dependencies]
-//!    pajamax = <pajamax-version>
-//!    prost = <prost-version>
+//!    pajamax = "0.1"
+//!    prost = "0.1"
 //!
 //!    [build-dependencies]
-//!    pajamax-build = <pajamax-build-version>
+//!    pajamax-build = "0.1"
 //!    ```
 //!
 //! 2. Call `pajamax-build` in build.rs:
@@ -25,7 +25,7 @@
 //!    }
 //!    ```
 //!
-//!   If your want more options, call `prost_build` directly with `PajamaxGen`:
+//!    If your want more options, call `prost_build` directly with `PajamaxGen`:
 //!
 //!    ```rust,ignore
 //!    fn main() -> Result<(), Box<dyn std::error::Error>> {
