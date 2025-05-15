@@ -2,8 +2,6 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
-use log::*;
-
 use crate::hpack_decoder::Decoder;
 use crate::hpack_encoder::Encoder;
 use crate::http2::*;
@@ -67,7 +65,7 @@ impl<S: AtiourService> Connection<S> {
         let mut last_end = 0;
         while let Ok(len) = self.c.read(&mut input[last_end..]) {
             if len == 0 {
-                trace!("connection closed");
+                // connection closed
                 break;
             }
             let end = last_end + len;
@@ -92,7 +90,6 @@ impl<S: AtiourService> Connection<S> {
                 return Err(ParseError::InvalidHttp2("too long frame"));
             }
             if pos < end {
-                trace!("not complete: {pos} {end}");
                 input.copy_within(pos..end, 0);
                 last_end = end - pos;
             } else {
@@ -145,7 +142,7 @@ impl<S: AtiourService> Connection<S> {
                     return Err(ParseError::InvalidHttp2("duplicated HEADERS frame"));
                 }
             }
-            k => trace!("omit other frames: {:?}", k),
+            _ => (),
         }
 
         Ok(())

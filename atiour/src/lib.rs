@@ -76,7 +76,8 @@
 //!
 //! - No gRPC Streaming mode, but only Unary mode;
 //! - No gRPC headers, such as `grpc-timeout`;
-//! - No `tower`'s ecosystem of middleware, services, and utilities, compared to `tonic`.
+//! - No `tower`'s ecosystem of middleware, services, and utilities, compared to `tonic`;
+//! - maybe something else.
 //!
 //! # Usage
 //!
@@ -92,6 +93,7 @@
 //!
 //! - More test;
 //! - Configuration builder;
+//! - Hooks like tower's layers.
 //! - A new mode, under which network threads send the received requests to other
 //!   threads for processing via a channel.
 //!
@@ -101,8 +103,6 @@
 
 use std::net::{TcpListener, ToSocketAddrs};
 use std::thread;
-
-use log::*;
 
 mod connection;
 mod hpack_decoder;
@@ -136,7 +136,6 @@ where
 {
     let listener = TcpListener::bind(addr)?;
     for connection in listener.incoming() {
-        trace!("new connection");
         let c = Connection::new(connection?, srv.clone());
         thread::spawn(move || c.handle());
     }

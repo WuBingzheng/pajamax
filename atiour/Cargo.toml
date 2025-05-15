@@ -11,7 +11,6 @@ keywords = ["grpc", "protobuf", "blocking"]
 categories = ["network-programming"]
 
 [dependencies]
-log = "0.4"
 prost = "0.13"
 
 [build-dependencies]
