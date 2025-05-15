@@ -39,7 +39,6 @@
 //! 3. Call `pajamax` in your source code. See the
 //!    [`helloworld`](https://github.com/WuBingzheng/pajamax/tree/main/examples/src/helloworld.rs)
 //!    for more details.
-//!
 
 use std::fmt::Write;
 use std::path::Path;

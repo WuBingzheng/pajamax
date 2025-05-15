@@ -101,10 +101,6 @@
 //! - Hooks like tower's layers.
 //! - A new mode, under which network threads send the received requests to other
 //!   threads for processing via a channel.
-//!
-//! # License
-//!
-//! MIT
 
 use std::net::{TcpListener, ToSocketAddrs};
 use std::thread;

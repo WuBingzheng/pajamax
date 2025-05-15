@@ -104,8 +104,4 @@ Todo list:
 - A new mode, under which network threads send the received requests to other
   threads for processing via a channel.
 
-## License
-
-MIT
-
 License: MIT
