@@ -54,10 +54,12 @@
 //!
 //! The above two optimizations eliminate the cost of the asynchronous runtime
 //! and reduce the cost of HTTP/2 protocol parsing, resulting in a significant
-//! performance improvement. In benchmark, Pajamax, which is implemented based
-//! on the above optimizations, is 10 times faster than tonic.
+//! performance improvement.
 //!
-//! See here for the bench code and more details.
+//! In my benchmark, Pajamax, which is implemented based on the above optimizations,
+//! is 10X faster than Tonic.
+//! See [the benchmark](https://github.com/WuBingzheng/pajamax/tree/main/benchmark)
+//! for the code and more details.
 //!
 //! # Conclusion
 //!
