@@ -1,4 +1,4 @@
 [workspace]
 resolver = "2"
-members = ["atiour", "atiour-build", "examples", "benchmark"]
+members = ["pajamax", "pajamax-build", "examples", "benchmark"]
 

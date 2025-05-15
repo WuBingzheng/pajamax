@@ -121,15 +121,15 @@ impl Representation {
     }
 }
 
-use crate::{AtiourService, ParseFn};
+use crate::{PajamaxService, ParseFn};
 
-pub struct Decoder<S: AtiourService> {
+pub struct Decoder<S: PajamaxService> {
     next_index: usize,
     indexed_paths: HashMap<usize, ParseFn<S::Request>>,
     huffman_paths: HashMap<Vec<u8>, ParseFn<S::Request>>,
 }
 
-impl<S: AtiourService> Decoder<S> {
+impl<S: PajamaxService> Decoder<S> {
     /// Creates a new `Decoder` with all settings set to default values.
     pub fn new() -> Self {
         Decoder {

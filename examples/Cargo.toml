@@ -13,11 +13,11 @@ name = "with_log"
 path = "src/with_log.rs"
 
 [dependencies]
-atiour = {version="*", path="../atiour/"}
+pajamax = {version="*", path="../pajamax/"}
 env_logger = "0.11.8"
 log = "0.4.27"
 prost = "0.13.5"
 
 [build-dependencies]
 prost-build = "0.13.5"
-atiour-build = {version="*", path="../atiour-build/"}
+pajamax-build = {version="*", path="../pajamax-build/"}

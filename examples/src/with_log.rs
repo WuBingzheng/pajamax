@@ -1,4 +1,4 @@
-use atiour::status::Status;
+use pajamax::status::Status;
 
 mod helloworld {
     include!(concat!(env!("OUT_DIR"), "/helloworld.rs"));
@@ -19,5 +19,5 @@ impl Greeter for MyGreeter {
 fn main() {
     env_logger::init();
 
-    atiour::serve(GreeterServer::new(MyGreeter()), "127.0.0.1:50051").unwrap();
+    pajamax::serve(GreeterServer::new(MyGreeter()), "127.0.0.1:50051").unwrap();
 }

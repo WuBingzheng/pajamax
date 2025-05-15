@@ -1,12 +1,12 @@
 [package]
-name = "atiour"
+name = "pajamax"
 version = "0.1.0"
 edition = "2021"
 authors = ["Wu Bingzheng <wubingzheng@gmail.com>"]
 description = "Fast gRPC server framework in blocking mode."
 license = "MIT"
-repository = "https://github.com/WuBingzheng/atiour"
-documentation = "https://docs.rs/atiour"
+repository = "https://github.com/WuBingzheng/pajamax"
+documentation = "https://docs.rs/pajamax"
 keywords = ["grpc", "protobuf", "blocking"]
 categories = ["network-programming"]
 

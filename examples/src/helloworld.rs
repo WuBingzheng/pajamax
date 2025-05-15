@@ -1,16 +1,16 @@
-// The usage of atiour is very simplar to tonic.
+// The usage of pajamax is very simplar to tonic.
 // You may compare this to tonic's [hellowold server]
 // (https://github.com/hyperium/tonic/blob/master/examples/src/helloworld/server.rs)
 // example.
 
-use atiour::status::Status;
+use pajamax::status::Status;
 
 use helloworld::{Greeter, GreeterServer};
 use helloworld::{HelloReply, HelloRequest};
 
 // import the generated code from .proto
 mod helloworld {
-    atiour::include_proto!("helloworld");
+    pajamax::include_proto!("helloworld");
 }
 
 // define your business context
@@ -39,5 +39,5 @@ fn main() {
     // start the server
     // By now we have not support configurations and multiple service,
     // so this API is simpler than tonic's.
-    atiour::serve(GreeterServer::new(greeter), addr).unwrap();
+    pajamax::serve(GreeterServer::new(greeter), addr).unwrap();
 }

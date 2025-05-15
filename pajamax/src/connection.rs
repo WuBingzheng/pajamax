@@ -5,7 +5,7 @@ use std::net::TcpStream;
 use crate::hpack_decoder::Decoder;
 use crate::hpack_encoder::Encoder;
 use crate::http2::*;
-use crate::{AtiourService, ParseFn};
+use crate::{PajamaxService, ParseFn};
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -31,7 +31,7 @@ impl From<prost::DecodeError> for ParseError {
     }
 }
 
-pub struct Connection<S: AtiourService> {
+pub struct Connection<S: PajamaxService> {
     c: TcpStream,
     srv: S,
 
@@ -41,7 +41,7 @@ pub struct Connection<S: AtiourService> {
     req_data_len: usize, // for WINDOW_UPDATE
 }
 
-impl<S: AtiourService> Connection<S> {
+impl<S: PajamaxService> Connection<S> {
     pub fn new(c: TcpStream, srv: S) -> Self {
         Self {
             c,

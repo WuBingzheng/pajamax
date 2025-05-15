@@ -54,7 +54,7 @@
 //!
 //! The above two optimizations eliminate the cost of the asynchronous runtime
 //! and reduce the cost of HTTP/2 protocol parsing, resulting in a significant
-//! performance improvement. In benchmark, Atiour, which is implemented based
+//! performance improvement. In benchmark, Pajamax, which is implemented based
 //! on the above optimizations, is 10 times faster than tonic.
 //!
 //! See here for the bench code and more details.
@@ -81,13 +81,13 @@
 //!
 //! # Usage
 //!
-//! The usage of Atiour is very similar to that of tonic.
-//! See the [examples](https://github.com/WuBingzheng/atiour/tree/main/examples)
+//! The usage of Pajamax is very similar to that of tonic.
+//! See the [examples](https://github.com/WuBingzheng/pajamax/tree/main/examples)
 //! for more detail.
 //!
 //! # Status
 //!
-//! Now Atiour is still in the development stage. I publish it to get feedback.
+//! Now Pajamax is still in the development stage. I publish it to get feedback.
 //!
 //! TODO:
 //!
@@ -116,8 +116,8 @@ use crate::status::Status;
 
 pub type ParseFn<R> = fn(&[u8]) -> Result<R, prost::DecodeError>;
 
-// `atiour-build` crate should implement this for service in .proto file.
-pub trait AtiourService {
+// `pajamax-build` crate should implement this for service in .proto file.
+pub trait PajamaxService {
     type Request;
 
     // On receiving a HEADERS frame, call this to locate the gRPC method
@@ -131,7 +131,7 @@ pub trait AtiourService {
 
 pub fn serve<S, A>(srv: S, addr: A) -> std::io::Result<()>
 where
-    S: AtiourService + Clone + Send + Sync + 'static,
+    S: PajamaxService + Clone + Send + Sync + 'static,
     A: ToSocketAddrs,
 {
     let listener = TcpListener::bind(addr)?;
@@ -150,7 +150,7 @@ where
 ///
 /// ```rust,ignore
 /// mod pb {
-///     atiour::include_proto!("helloworld");
+///     pajamax::include_proto!("helloworld");
 /// }
 /// ```
 #[macro_export]

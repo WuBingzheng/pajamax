@@ -5,12 +5,12 @@ use std::fmt::Write;
 //
 // ````
 //    prost_build::Config::new()
-//        .service_generator(Box::new(atiour_build::AtiourGen {}))
+//        .service_generator(Box::new(pajamax_build::PajamaxGen {}))
 //        .compile_protos(&["helloworld.proto"], &["."])
 // ````
-pub struct AtiourGen {}
+pub struct PajamaxGen {}
 
-impl prost_build::ServiceGenerator for AtiourGen {
+impl prost_build::ServiceGenerator for PajamaxGen {
     fn generate(&mut self, service: prost_build::Service, buf: &mut String) {
         // trait ${Service}, defines all gRPC methods.
         // Applications should implement this trait.
@@ -18,7 +18,7 @@ impl prost_build::ServiceGenerator for AtiourGen {
         for m in service.methods.iter() {
             writeln!(
                 buf,
-                "    fn {} (&self, req: {}) -> Result<{}, atiour::status::Status>;",
+                "    fn {} (&self, req: {}) -> Result<{}, pajamax::status::Status>;",
                 m.name, m.input_type, m.output_type
             )
             .unwrap();
@@ -52,11 +52,11 @@ impl prost_build::ServiceGenerator for AtiourGen {
         )
         .unwrap();
 
-        // impl atiour::AtiourService for ${Service}
+        // impl pajamax::PajamaxService for ${Service}
         writeln!(
             buf,
             "use prost::Message;
-             impl<T> atiour::AtiourService for {}Server<T>
+             impl<T> pajamax::PajamaxService for {}Server<T>
              where T: {}
              {{
                  type Request = {}Request;
@@ -65,7 +65,7 @@ impl prost_build::ServiceGenerator for AtiourGen {
         )
         .unwrap();
 
-        // impl AtiourService::request_parse_fn_by_path()
+        // impl PajamaxService::request_parse_fn_by_path()
         writeln!(
             buf,
             "fn request_parse_fn_by_path(
@@ -86,10 +86,10 @@ impl prost_build::ServiceGenerator for AtiourGen {
         }
         writeln!(buf, " _ => None, }} }}").unwrap();
 
-        // impl AtiourService::call()
+        // impl PajamaxService::call()
         writeln!(
             buf,
-            "fn call(&self, request: Self::Request) -> Result<impl prost::Message, atiour::status::Status> {{
+            "fn call(&self, request: Self::Request) -> Result<impl prost::Message, pajamax::status::Status> {{
                  match request {{"
         )
         .unwrap();
@@ -111,13 +111,13 @@ use std::path::Path;
 /// Simple .proto compiling.
 ///
 /// If you need more options, call the `prost_build::Config` directly
-/// with `.service_generator(Box::new(AtiourGen {}))`, just like this
+/// with `.service_generator(Box::new(PajamaxGen {}))`, just like this
 /// function's source code.
 pub fn compile_protos(
     protos: &[impl AsRef<Path>],
     includes: &[impl AsRef<Path>],
 ) -> std::io::Result<()> {
     prost_build::Config::new()
-        .service_generator(Box::new(AtiourGen {}))
+        .service_generator(Box::new(PajamaxGen {}))
         .compile_protos(protos, includes)
 }

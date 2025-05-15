@@ -1,12 +1,12 @@
-Benchmark to compare atiour and tonic
+Benchmark to compare pajamax and tonic
 
 There are 3 programs:
 
-- atiour server
+- pajamax server
 - tonic server
 - benchmark client
 
-# atiour server
+# pajamax server
 
 Use the helloworld example.
 
