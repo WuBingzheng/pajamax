@@ -79,6 +79,9 @@
 //! - No `tower`'s ecosystem of middleware, services, and utilities, compared to `tonic`;
 //! - maybe something else.
 //!
+//! It's like pajamas, super comfortable and convenient to wear, but only
+//! suitable at home, not for going out in public.
+//!
 //! # Usage
 //!
 //! The usage of Pajamax is very similar to that of tonic.
