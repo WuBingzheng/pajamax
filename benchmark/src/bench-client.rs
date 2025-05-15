@@ -9,24 +9,23 @@ pub mod helloworld {
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 4 {
-        println!("Usage: {} connections concurrent_streams_per_conn requests_per_concurrent", args[0]);
+    if args.len() != 5 {
+        println!("Usage: {} server-address connections concurrent_streams_per_conn requests_per_concurrent", args[0]);
         return;
     }
-    let connections: usize = args[1].parse().unwrap();
-    let concurrent_streams_per_conn: usize = args[2].parse().unwrap();
-    let requests_per_concurrent: usize = args[3].parse().unwrap();
+    let srv_addr = tonic::transport::Endpoint::from_shared(args[1].clone()).unwrap();
+    let connections: usize = args[2].parse().unwrap();
+    let concurrent_streams_per_conn: usize = args[3].parse().unwrap();
+    let requests_per_concurrent: usize = args[4].parse().unwrap();
 
     let mut tasks = Vec::new();
 
     for _ in 0..connections {
-        let client = GreeterClient::connect("http://127.0.0.1:50051").await.unwrap();
+        let client = GreeterClient::connect(srv_addr.clone()).await.unwrap();
 
         for _ in 0..concurrent_streams_per_conn {
-
             let mut c = client.clone();
             let task = tokio::spawn(async move {
-
                 let now = Instant::now();
                 for _ in 0..requests_per_concurrent {
                     let request = tonic::Request::new(HelloRequest {
@@ -50,5 +49,9 @@ async fn main() {
         }
         last_finish = Some(d);
     }
-    println!("done: {:?} ~ {:?}", first_finish.unwrap(), last_finish.unwrap());
+    println!(
+        "done: {:?} ~ {:?}",
+        first_finish.unwrap(),
+        last_finish.unwrap()
+    );
 }
