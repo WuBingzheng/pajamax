@@ -2,6 +2,13 @@
 name = "pajamax-build"
 version = "0.1.0"
 edition = "2021"
+authors = ["Wu Bingzheng <wubingzheng@gmail.com>"]
+description = "Codegen module of `tonic` gRPC implementation."
+license = "MIT"
+repository = "https://github.com/WuBingzheng/pajamax-build"
+documentation = "https://docs.rs/pajamax-build"
+keywords = ["grpc", "protobuf", "blocking"]
+categories = ["network-programming"]
 
 [dependencies]
 prost-build = "0.13"
