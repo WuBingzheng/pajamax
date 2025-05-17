@@ -124,8 +124,7 @@ impl Representation {
 use crate::{PajamaxService, ParseFn};
 
 pub struct Decoder<S: PajamaxService> {
-    next_index: usize,
-    indexed_paths: HashMap<usize, ParseFn<S::Request>>,
+    dynamic_table: Vec<Option<ParseFn<S::Request>>>,
     huffman_paths: HashMap<Vec<u8>, ParseFn<S::Request>>,
 }
 
@@ -133,8 +132,7 @@ impl<S: PajamaxService> Decoder<S> {
     /// Creates a new `Decoder` with all settings set to default values.
     pub fn new() -> Self {
         Decoder {
-            next_index: 62,
-            indexed_paths: HashMap::new(),
+            dynamic_table: Vec::new(),
             huffman_paths: HashMap::new(),
         }
     }
@@ -151,24 +149,35 @@ impl<S: PajamaxService> Decoder<S> {
             let adv = match Representation::load(buf[0])? {
                 Indexed => {
                     let (index, adv) = decode_int(buf, 7)?;
-                    if let Some(request_parse_fn) = self.indexed_paths.get(&index) {
-                        find_path = Ok(*request_parse_fn);
+
+                    if index > 61 {
+                        let table_len = self.dynamic_table.len();
+                        if index > 61 + table_len {
+                            return Err(ParseError::InvalidHpack("invalid dynamic table index"));
+                        }
+
+                        let index = 61 + table_len - index;
+                        if let Some(request_parse_fn) = self.dynamic_table[index] {
+                            find_path = Ok(request_parse_fn);
+                        }
                     }
                     adv
                 }
                 LiteralWithIndexing => {
                     let (path, adv) = decode_literal_path(buf, true)?;
 
-                    if let Some(path) = path {
-                        let mut tmp_decode_path_buf = Vec::new();
-                        let path = path.to_plain(&mut tmp_decode_path_buf)?;
+                    let opt_parse_fn = match path {
+                        Some(path) => {
+                            let mut tmp_decode_path_buf = Vec::new();
+                            let path = path.to_plain(&mut tmp_decode_path_buf)?;
 
-                        let request_parse_fn = Self::request_parse_fn_by_path(path)?;
-                        find_path = Ok(request_parse_fn);
-
-                        self.indexed_paths.insert(self.next_index, request_parse_fn);
-                    }
-                    self.next_index += 1;
+                            let request_parse_fn = Self::request_parse_fn_by_path(path)?;
+                            find_path = Ok(request_parse_fn);
+                            Some(request_parse_fn)
+                        }
+                        None => None,
+                    };
+                    self.dynamic_table.push(opt_parse_fn);
 
                     adv
                 }
