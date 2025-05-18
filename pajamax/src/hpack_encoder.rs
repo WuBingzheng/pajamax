@@ -1,27 +1,39 @@
 #[derive(Debug)]
 pub struct Encoder {
-    next_index: usize,
-    index_grpc_stauts_zero: Option<usize>,
+    dynamic_table_size: usize,
+    rank_grpc_status_zero: Option<usize>,
+    rank_content_type: Option<usize>,
 }
 
 impl Encoder {
     pub fn new() -> Self {
         Self {
-            next_index: 62,
-            index_grpc_stauts_zero: None,
+            dynamic_table_size: 0,
+            rank_grpc_status_zero: None,
+            rank_content_type: None,
         }
     }
 
     pub fn encode_status_200(&mut self, dst: &mut Vec<u8>) {
-        encode_int(8, 7, 0x80, dst);
+        self.encode_static_index(8, dst);
     }
 
     pub fn encode_grpc_status_zero(&mut self, dst: &mut Vec<u8>) {
-        match self.index_grpc_stauts_zero {
-            Some(index) => encode_int(index, 7, 0x80, dst),
+        match self.rank_grpc_status_zero {
+            Some(rank) => self.encode_dynamic_index(rank, dst),
             None => {
-                self.index_grpc_stauts_zero = Some(self.next_index);
                 self.encode_and_index_header("grpc-status", "0", dst);
+                self.rank_grpc_status_zero = Some(self.dynamic_table_size);
+            }
+        }
+    }
+
+    pub fn encode_content_type(&mut self, dst: &mut Vec<u8>) {
+        match self.rank_content_type {
+            Some(rank) => self.encode_dynamic_index(rank, dst),
+            None => {
+                self.encode_and_index_header("content-type", "application/grpc", dst);
+                self.rank_content_type = Some(self.dynamic_table_size);
             }
         }
     }
@@ -40,8 +52,11 @@ impl Encoder {
             CODES[code]
         };
 
-        match self.index_grpc_stauts_zero {
-            Some(index) => encode_with_indexed_name(index, code_str, dst),
+        match self.rank_grpc_status_zero {
+            Some(rank) => {
+                let index = self.dynamic_index(rank);
+                encode_with_indexed_name(index, code_str, dst);
+            }
             None => encode_header("grpc-status", code_str, dst),
         }
     }
@@ -55,7 +70,20 @@ impl Encoder {
         encode_str(name, dst);
         encode_str(value, dst);
 
-        self.next_index += 1;
+        self.dynamic_table_size += 1;
+    }
+
+    fn encode_static_index(&self, index: usize, dst: &mut Vec<u8>) {
+        encode_int(index, 7, 0x80, dst);
+    }
+
+    fn encode_dynamic_index(&self, rank: usize, dst: &mut Vec<u8>) {
+        let index = self.dynamic_index(rank);
+        encode_int(index, 7, 0x80, dst);
+    }
+
+    fn dynamic_index(&self, rank: usize) -> usize {
+        self.dynamic_table_size - rank + 62
     }
 }
 

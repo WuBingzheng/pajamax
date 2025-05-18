@@ -183,7 +183,7 @@ pub fn build_response<M: prost::Message>(
     let start = output.len();
     output.resize(start + Frame::HEAD_SIZE, 0);
     hpack_encoder.encode_status_200(output);
-    hpack_encoder.encode_grpc_status_zero(output);
+    hpack_encoder.encode_content_type(output);
 
     Frame::build_head(
         output.len() - start - Frame::HEAD_SIZE,
@@ -207,7 +207,7 @@ pub fn build_response<M: prost::Message>(
     Frame::build_head(
         payload_len,
         FrameKind::Data,
-        HeadFlags::END_STREAM,
+        0,
         stream_id,
         &mut output[data_start..],
     );
@@ -215,6 +215,20 @@ pub fn build_response<M: prost::Message>(
     build_u32(
         msg_len as u32,
         &mut output[payload_start + 1..payload_start + 5],
+    );
+
+    // HEADERS
+    // TODO: check `TE: trailer` in request headers
+    let start = output.len();
+    output.resize(start + Frame::HEAD_SIZE, 0);
+    hpack_encoder.encode_grpc_status_zero(output);
+
+    Frame::build_head(
+        output.len() - start - Frame::HEAD_SIZE,
+        FrameKind::Headers,
+        HeadFlags::END_HEADERS | HeadFlags::END_STREAM,
+        stream_id,
+        &mut output[start..],
     );
 }
 
@@ -228,6 +242,7 @@ pub fn build_status(
     let start = output.len();
     output.resize(start + Frame::HEAD_SIZE, 0);
     hpack_encoder.encode_status_200(output);
+    hpack_encoder.encode_content_type(output);
     hpack_encoder.encode_grpc_status_nonzero(status.code as usize, output);
     hpack_encoder.encode_grpc_message(&status.message, output);
 
