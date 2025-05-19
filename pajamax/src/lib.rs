@@ -106,14 +106,24 @@ use std::net::{TcpListener, ToSocketAddrs};
 use std::thread;
 
 mod connection;
+mod error;
 mod hpack_decoder;
 mod hpack_encoder;
 mod http2;
 mod huffman;
+mod response_end;
+
+pub mod dispatch_server;
+pub mod local_server;
+pub mod macros;
 pub mod status;
 
-use crate::connection::Connection;
-use crate::status::Status;
+pub use crate::http2::RespEncode;
+
+use crate::dispatch_server::{DispatchConnection, PajamaxDispatchService};
+use crate::local_server::LocalConnection;
+
+pub type Response<Reply> = Result<Reply, crate::status::Status>;
 
 /// Parse the request body from input data.
 pub type ParseFn<R> = fn(&[u8]) -> Result<R, prost::DecodeError>;
@@ -121,6 +131,7 @@ pub type ParseFn<R> = fn(&[u8]) -> Result<R, prost::DecodeError>;
 /// Used by `pajamax-build` crate. It should implement this for service in .proto file.
 pub trait PajamaxService {
     type Request;
+    type Reply: RespEncode + Send + Sync + 'static;
 
     // On receiving a HEADERS frame, call this to locate the gRPC method
     // by `:path` header, and returns that method's request-parse-handler
@@ -128,37 +139,35 @@ pub trait PajamaxService {
     fn request_parse_fn_by_path(path: &[u8]) -> Option<ParseFn<Self::Request>>;
 
     // Call methods' handlers on the request, and return response.
-    fn call(&self, request: Self::Request) -> Result<impl prost::Message, Status>;
+    fn call(&self, request: Self::Request) -> Response<Self::Reply>;
 }
 
-/// Start the server.
-pub fn serve<S, A>(srv: S, addr: A) -> std::io::Result<()>
+/// Start the server in local-mode.
+pub fn serve_local<S, A>(srv: S, addr: A) -> std::io::Result<()>
 where
     S: PajamaxService + Clone + Send + Sync + 'static,
     A: ToSocketAddrs,
 {
     let listener = TcpListener::bind(addr)?;
-    for connection in listener.incoming() {
-        let c = Connection::new(connection?, srv.clone());
-        thread::spawn(move || c.handle());
+    for c in listener.incoming() {
+        let c = c?;
+        let srv_conn = LocalConnection::new(srv.clone(), &c);
+        thread::spawn(move || connection::handle(srv_conn, c));
     }
     unreachable!();
 }
 
-/// Include generated proto server and client items.
-///
-/// You must specify the gRPC package name.
-///
-/// Examples:
-///
-/// ```rust,ignore
-/// mod pb {
-///     pajamax::include_proto!("helloworld");
-/// }
-/// ```
-#[macro_export]
-macro_rules! include_proto {
-    ($package: tt) => {
-        include!(concat!(env!("OUT_DIR"), concat!("/", $package, ".rs")));
-    };
+/// Start the server in dispatch-mode.
+pub fn serve_dispatch<S, A>(srv: S, addr: A) -> std::io::Result<()>
+where
+    S: PajamaxDispatchService + Clone + Send + Sync + 'static,
+    A: ToSocketAddrs,
+{
+    let listener = TcpListener::bind(addr)?;
+    for c in listener.incoming() {
+        let c = c?;
+        let srv_conn = DispatchConnection::new(srv.clone(), &c);
+        thread::spawn(move || connection::handle(srv_conn, c));
+    }
+    unreachable!();
 }

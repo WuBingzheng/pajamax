@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
-use crate::connection::ParseError;
+use crate::error::Error;
 use crate::hpack_encoder::Encoder;
 use crate::status::Status;
 
@@ -82,12 +82,12 @@ impl<'a> Frame<'a> {
         build_u32(stream_id, &mut output[5..9]);
     }
 
-    pub fn process_headers(&self) -> Result<&[u8], ParseError> {
+    pub fn process_headers(&self) -> Result<&[u8], Error> {
         if !self.flags.is_end_headers() {
-            return Err(ParseError::InvalidHttp2("multiple HEADERS frames"));
+            return Err(Error::InvalidHttp2("multiple HEADERS frames"));
         }
         if self.flags.is_end_stream() {
-            return Err(ParseError::InvalidHttp2("HEADERS frame with no DATA"));
+            return Err(Error::InvalidHttp2("HEADERS frame with no DATA"));
         }
         let headers = self.skip_padded(self.payload)?;
         let headers = self.skip_priority(headers)?;
@@ -95,19 +95,19 @@ impl<'a> Frame<'a> {
         Ok(headers)
     }
 
-    pub fn process_data(&self) -> Result<&[u8], ParseError> {
+    pub fn process_data(&self) -> Result<&[u8], Error> {
         self.skip_padded(self.payload)
     }
 
-    fn skip_padded<'b>(&self, buf: &'b [u8]) -> Result<&'b [u8], ParseError> {
+    fn skip_padded<'b>(&self, buf: &'b [u8]) -> Result<&'b [u8], Error> {
         if self.flags.is_padded() {
             if buf.len() < 1 {
-                return Err(ParseError::InvalidHttp2("invalid padded"));
+                return Err(Error::InvalidHttp2("invalid padded"));
             }
             let pad_len = buf[0] as usize;
             let buf_len = buf.len();
             if buf_len <= 1 + pad_len {
-                return Err(ParseError::InvalidHttp2("invalid padded"));
+                return Err(Error::InvalidHttp2("invalid padded"));
             }
             Ok(&buf[1..buf_len - pad_len])
         } else {
@@ -115,10 +115,10 @@ impl<'a> Frame<'a> {
         }
     }
 
-    fn skip_priority<'b>(&self, buf: &'b [u8]) -> Result<&'b [u8], ParseError> {
+    fn skip_priority<'b>(&self, buf: &'b [u8]) -> Result<&'b [u8], Error> {
         if self.flags.is_priority() {
             if buf.len() < 5 {
-                return Err(ParseError::InvalidHttp2("invalid priority"));
+                return Err(Error::InvalidHttp2("invalid priority"));
             }
             Ok(&buf[5..])
         } else {
@@ -127,15 +127,15 @@ impl<'a> Frame<'a> {
     }
 }
 
-pub fn handshake(connection: &mut TcpStream) -> Result<(), ParseError> {
+pub fn handshake(connection: &mut TcpStream) -> Result<(), Error> {
     // parse the magic
     let mut input = vec![0; 24];
     let len = connection.read(&mut input)?;
     if len != 24 {
-        return Err(ParseError::InvalidHttp2("too short handshake"));
+        return Err(Error::InvalidHttp2("too short handshake"));
     }
     if input != *b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n" {
-        return Err(ParseError::InvalidHttp2("invalid handshake message"));
+        return Err(Error::InvalidHttp2("invalid handshake message"));
     }
 
     // send empty SETTINGS
@@ -173,9 +173,9 @@ impl HeadFlags {
     }
 }
 
-pub fn build_response<M: prost::Message>(
+pub fn build_response<Reply: RespEncode>(
     stream_id: u32,
-    reply: M,
+    reply: Reply,
     hpack_encoder: &mut Encoder,
     output: &mut Vec<u8>,
 ) {
@@ -271,4 +271,8 @@ fn parse_u32(buf: &[u8]) -> u32 {
 fn build_u32(n: u32, buf: &mut [u8]) {
     let tmp = n.to_be_bytes();
     buf.copy_from_slice(&tmp);
+}
+
+pub trait RespEncode {
+    fn encode(&self, output: &mut Vec<u8>) -> Result<(), prost::EncodeError>;
 }

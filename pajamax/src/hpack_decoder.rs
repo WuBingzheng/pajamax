@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::connection::ParseError;
+use crate::error::Error;
 use crate::huffman;
 
 enum Representation {
@@ -95,7 +95,7 @@ enum Representation {
 }
 
 impl Representation {
-    fn load(byte: u8) -> Result<Representation, ParseError> {
+    fn load(byte: u8) -> Result<Representation, Error> {
         const INDEXED: u8 = 0b1000_0000;
         const LITERAL_WITH_INDEXING: u8 = 0b0100_0000;
         const LITERAL_WITHOUT_INDEXING: u8 = 0b1111_0000;
@@ -116,7 +116,7 @@ impl Representation {
         } else if byte & SIZE_UPDATE_MASK == SIZE_UPDATE {
             Ok(Representation::SizeUpdate)
         } else {
-            Err(ParseError::InvalidHpack("invalid Representation"))
+            Err(Error::InvalidHpack("invalid Representation"))
         }
     }
 }
@@ -137,10 +137,10 @@ impl<S: PajamaxService> Decoder<S> {
         }
     }
 
-    pub fn find_path(&mut self, mut buf: &[u8]) -> Result<ParseFn<S::Request>, ParseError> {
+    pub fn find_path(&mut self, mut buf: &[u8]) -> Result<ParseFn<S::Request>, Error> {
         use self::Representation::*;
 
-        let mut find_path = Err(ParseError::NoPathSet);
+        let mut find_path = Err(Error::NoPathSet);
 
         while !buf.is_empty() {
             // At this point we are always at the beginning of the next block
@@ -153,7 +153,7 @@ impl<S: PajamaxService> Decoder<S> {
                     if index > 61 {
                         let table_len = self.dynamic_table.len();
                         if index > 61 + table_len {
-                            return Err(ParseError::InvalidHpack("invalid dynamic table index"));
+                            return Err(Error::InvalidHpack("invalid dynamic table index"));
                         }
 
                         let index = 61 + table_len - index;
@@ -222,8 +222,8 @@ impl<S: PajamaxService> Decoder<S> {
         find_path
     }
 
-    fn request_parse_fn_by_path(path: &[u8]) -> Result<ParseFn<S::Request>, ParseError> {
-        (S::request_parse_fn_by_path)(path).ok_or(ParseError::UnknownMethod(
+    fn request_parse_fn_by_path(path: &[u8]) -> Result<ParseFn<S::Request>, Error> {
+        (S::request_parse_fn_by_path)(path).ok_or(Error::UnknownMethod(
             String::from_utf8_lossy(path).to_string(),
         ))
     }
@@ -249,7 +249,7 @@ impl<'a> OutStr<'a> {
         }
     }
 
-    fn to_plain(&'a self, tmp_buf: &'a mut Vec<u8>) -> Result<&'a [u8], ParseError> {
+    fn to_plain(&'a self, tmp_buf: &'a mut Vec<u8>) -> Result<&'a [u8], Error> {
         match self {
             OutStr::Plain(plain) => Ok(plain),
             OutStr::Huffman(huff) => {
@@ -263,7 +263,7 @@ impl<'a> OutStr<'a> {
 fn decode_literal_path<'a>(
     mut buf: &'a [u8],
     index: bool,
-) -> Result<(Option<OutStr<'a>>, usize), ParseError> {
+) -> Result<(Option<OutStr<'a>>, usize), Error> {
     let prefix = if index { 6 } else { 4 };
 
     // Extract the table index for the name, or 0 if not indexed
@@ -295,9 +295,9 @@ fn decode_literal_path<'a>(
     }
 }
 
-fn decode_string<'a>(buf: &'a [u8]) -> Result<(OutStr<'a>, usize), ParseError> {
+fn decode_string<'a>(buf: &'a [u8]) -> Result<(OutStr<'a>, usize), Error> {
     if buf.is_empty() {
-        return Err(ParseError::InvalidHpack("need more"));
+        return Err(Error::InvalidHpack("need more"));
     }
 
     const HUFF_FLAG: u8 = 0b1000_0000;
@@ -307,7 +307,7 @@ fn decode_string<'a>(buf: &'a [u8]) -> Result<(OutStr<'a>, usize), ParseError> {
     let (len, adv) = decode_int(buf, 7)?;
 
     if len > buf.len() - adv {
-        return Err(ParseError::InvalidHpack("need more"));
+        return Err(Error::InvalidHpack("need more"));
     }
 
     let end = adv + len;
@@ -320,7 +320,7 @@ fn decode_string<'a>(buf: &'a [u8]) -> Result<(OutStr<'a>, usize), ParseError> {
     }
 }
 
-fn decode_int(buf: &[u8], prefix_size: u8) -> Result<(usize, usize), ParseError> {
+fn decode_int(buf: &[u8], prefix_size: u8) -> Result<(usize, usize), Error> {
     // The octet limit is chosen such that the maximum allowed *value* can
     // never overflow an unsigned 32-bit integer. The maximum value of any
     // integer that can be encoded with 5 octets is ~2^28
@@ -329,11 +329,11 @@ fn decode_int(buf: &[u8], prefix_size: u8) -> Result<(usize, usize), ParseError>
     const VARINT_FLAG: u8 = 0b1000_0000;
 
     if prefix_size < 1 || prefix_size > 8 {
-        return Err(ParseError::InvalidHpack("invalid integer"));
+        return Err(Error::InvalidHpack("invalid integer"));
     }
 
     if buf.is_empty() {
-        return Err(ParseError::InvalidHpack("need more"));
+        return Err(Error::InvalidHpack("need more"));
     }
 
     let mask = if prefix_size == 8 {
@@ -372,9 +372,9 @@ fn decode_int(buf: &[u8], prefix_size: u8) -> Result<(usize, usize), ParseError>
 
         if bytes == MAX_BYTES {
             // The spec requires that this situation is an error
-            return Err(ParseError::InvalidHpack("integer overflow"));
+            return Err(Error::InvalidHpack("integer overflow"));
         }
     }
 
-    Err(ParseError::InvalidHpack("need more"))
+    Err(Error::InvalidHpack("need more"))
 }

@@ -1,7 +1,7 @@
 mod table;
 
 use self::table::{DECODE_TABLE, ENCODE_TABLE};
-use crate::connection::ParseError;
+use crate::error::Error;
 
 // Constructed in the generated `table.rs` file
 struct Decoder {
@@ -15,7 +15,7 @@ const MAYBE_EOS: u8 = 1;
 const DECODED: u8 = 2;
 const ERROR: u8 = 4;
 
-pub fn decode(src: &[u8], buf: &mut Vec<u8>) -> Result<(), ParseError> {
+pub fn decode(src: &[u8], buf: &mut Vec<u8>) -> Result<(), Error> {
     let mut decoder = Decoder::new();
 
     for b in src {
@@ -29,7 +29,7 @@ pub fn decode(src: &[u8], buf: &mut Vec<u8>) -> Result<(), ParseError> {
     }
 
     if !decoder.is_final() {
-        return Err(ParseError::InvalidHuffman);
+        return Err(Error::InvalidHuffman);
     }
 
     Ok(())
@@ -70,13 +70,13 @@ impl Decoder {
     }
 
     // Decodes 4 bits
-    fn decode4(&mut self, input: u8) -> Result<Option<u8>, ParseError> {
+    fn decode4(&mut self, input: u8) -> Result<Option<u8>, Error> {
         // (next-state, byte, flags)
         let (next, byte, flags) = DECODE_TABLE[self.state][input as usize];
 
         if flags & ERROR == ERROR {
             // Data followed the EOS marker
-            return Err(ParseError::InvalidHuffman);
+            return Err(Error::InvalidHuffman);
         }
 
         let mut ret = None;
