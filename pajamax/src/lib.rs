@@ -139,7 +139,7 @@ pub trait PajamaxService {
     fn request_parse_fn_by_path(path: &[u8]) -> Option<ParseFn<Self::Request>>;
 
     // Call methods' handlers on the request, and return response.
-    fn call(&self, request: Self::Request) -> Response<Self::Reply>;
+    fn call(&mut self, request: Self::Request) -> Response<Self::Reply>;
 }
 
 /// Start the server in local-mode.

@@ -14,15 +14,17 @@ mod helloworld {
 }
 
 // define your business context
+#[derive(Clone)]
 struct MyGreeter();
 
 // `Greeter` trait defines all methods in gRPC server
 impl Greeter for MyGreeter {
-    // there are 3 difference compared to tonic's method handler:
+    // there are 4 difference compared to tonic's method handler:
     // - `fn` but not `async fn`
+    // - `&mut self` but not `&self`
     // - `HelloRequest` but not `Request<HelloRequest>`
     // - `HelloReply` but not `Response<HelloReply>`
-    fn say_hello(&self, req: HelloRequest) -> Result<HelloReply, Status> {
+    fn say_hello(&mut self, req: HelloRequest) -> Result<HelloReply, Status> {
         let reply = HelloReply {
             message: format!("Hello {}!", req.name),
         };

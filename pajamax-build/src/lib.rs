@@ -43,30 +43,58 @@
 use std::fmt::Write;
 use std::path::Path;
 
+/// Modes: Local and Dispatch.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Mode {
+    Local,
+    Dispatch,
+}
+
 /// Generate service code for `pajamax` in `proto-build`.
 ///
 /// See the module's document for usage.
-pub struct PajamaxGen();
+pub struct PajamaxGen {
+    mode: Mode,
+}
 
 impl prost_build::ServiceGenerator for PajamaxGen {
     fn generate(&mut self, service: prost_build::Service, buf: &mut String) {
-        gen_trait_service(&service, buf);
+        gen_trait_service(&service, buf, self.mode);
         gen_request(&service, buf);
         gen_reply(&service, buf);
         gen_server(&service, buf);
-        gen_dispatch_server(&service, buf);
+
+        if self.mode == Mode::Dispatch {
+            gen_dispatch_channels(&service, buf);
+            gen_trait_service_dispatch(&service, buf);
+            gen_dispatch_server(&service, buf);
+        }
+        println!("{buf}");
     }
 }
 
 // trait ${Service}
-// This defines all gRPC methods. Applications should implement this trait.
-fn gen_trait_service(service: &prost_build::Service, buf: &mut String) {
+//
+// This defines all gRPC methods.
+//
+// For Local mode, applications should implement this trait for its server context.
+//
+// For Dispatch mode, applications should implement this trait for front and
+// backend server contexts both. See module's ducument for details.
+fn gen_trait_service(service: &prost_build::Service, buf: &mut String, mode: Mode) {
+    let method_end = match mode {
+        Mode::Local => ";",
+        Mode::Dispatch => "{ unimplemented!(\"missing method in pajamax of dispatch-mode\"); }",
+    };
+
+    writeln!(buf, "#[allow(unused_variables)]").unwrap();
     writeln!(buf, "pub trait {} {{", service.name).unwrap();
+
     for m in service.methods.iter() {
         writeln!(
             buf,
-            "fn {} (&self, req: {}) -> Result<{}, pajamax::status::Status>;",
-            m.name, m.input_type, m.output_type
+            "fn {}(&mut self, req: {}) -> Result<{}, pajamax::status::Status> {}",
+            m.name, m.input_type, m.output_type, method_end
         )
         .unwrap();
     }
@@ -74,9 +102,12 @@ fn gen_trait_service(service: &prost_build::Service, buf: &mut String) {
 }
 
 // enum ${Service}Request
+//
+// Used internally. Applications should not touch this.
 fn gen_request(service: &prost_build::Service, buf: &mut String) {
     writeln!(buf, "#[derive(Debug, PartialEq)]").unwrap();
     writeln!(buf, "pub enum {}Request {{", service.name).unwrap();
+
     for m in service.methods.iter() {
         writeln!(buf, "{}({}),", m.proto_name, m.input_type).unwrap();
     }
@@ -84,9 +115,12 @@ fn gen_request(service: &prost_build::Service, buf: &mut String) {
 }
 
 // enum ${Service}Reply
+//
+// Used internally. Applications should not touch this.
 fn gen_reply(service: &prost_build::Service, buf: &mut String) {
     writeln!(buf, "#[derive(Debug, PartialEq)]").unwrap();
     writeln!(buf, "pub enum {}Reply {{", service.name).unwrap();
+
     for m in service.methods.iter() {
         writeln!(buf, "{}({}),", m.proto_name, m.output_type).unwrap();
     }
@@ -101,6 +135,7 @@ fn gen_reply(service: &prost_build::Service, buf: &mut String) {
         service.name
     )
     .unwrap();
+
     for m in service.methods.iter() {
         writeln!(buf, "Self::{}(r) => r.encode(output),", m.proto_name).unwrap();
     }
@@ -108,20 +143,24 @@ fn gen_reply(service: &prost_build::Service, buf: &mut String) {
 }
 
 // struct ${Service}Server
+//
+// Intermediary between pajamax::PajamaxService and application's server.
 fn gen_server(service: &prost_build::Service, buf: &mut String) {
     writeln!(
         buf,
         "pub struct {}Server<T: {}> {{
-             inner: std::sync::Arc<T>,
-         }}
+            inner: T,
+        }}
 
-         impl<T: {}> {}Server<T> {{
-             pub fn new(inner: T) -> Self {{ Self {{ inner: inner.into() }} }}
-         }}
+        impl<T: {} + std::clone::Clone> Clone for {}Server<T> {{
+            fn clone(&self) -> Self {{
+                Self {{ inner: self.inner.clone() }}
+            }}
+        }}
 
-         impl<T: {}> Clone for {}Server<T> {{
-             fn clone (&self) -> Self {{ Self {{ inner: self.inner.clone() }} }}
-         }}",
+        impl<T: {}> {}Server<T> {{
+            pub fn new(inner: T) -> Self {{ Self {{ inner }} }}
+        }}",
         service.name, service.name, service.name, service.name, service.name, service.name
     )
     .unwrap();
@@ -129,23 +168,23 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
     // impl pajamax::PajamaxService for ${Service}
     writeln!(
         buf,
-        "use prost::Message;
-         impl<T> pajamax::PajamaxService for {}Server<T>
-         where T: {}
-         {{
-             type Request = {}Request;
-             type Reply = {}Reply;",
+        "use prost::Message as _;
+        impl<T> pajamax::PajamaxService for {}Server<T>
+        where T: {}
+        {{
+            type Request = {}Request;
+            type Reply = {}Reply;",
         service.name, service.name, service.name, service.name
     )
     .unwrap();
 
-    // impl PajamaxService::request_parse_fn_by_path()
+    // - impl PajamaxService::request_parse_fn_by_path()
     writeln!(
         buf,
         "fn request_parse_fn_by_path(
-             path: &[u8],
-         ) -> Option<fn(&[u8]) -> Result<Self::Request, prost::DecodeError>> {{
-             match path {{"
+            path: &[u8],
+        ) -> Option<pajamax::ParseFn<Self::Request>> {{
+            match path {{"
     )
     .unwrap();
 
@@ -157,13 +196,13 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
         )
         .unwrap();
     }
-    writeln!(buf, " _ => None, }} }}").unwrap();
+    writeln!(buf, "_ => None, }} }}").unwrap();
 
-    // impl PajamaxService::call()
+    // - impl PajamaxService::call()
     writeln!(
         buf,
-        "fn call(&self, request: Self::Request) -> Result<Self::Reply, pajamax::status::Status> {{
-             match request {{"
+        "fn call(&mut self, req: Self::Request) -> Result<Self::Reply, pajamax::status::Status> {{
+            match req {{"
     )
     .unwrap();
 
@@ -178,38 +217,86 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
     writeln!(buf, "}} }} }}").unwrap();
 }
 
+// some alias
+fn gen_dispatch_channels(service: &prost_build::Service, buf: &mut String) {
+    writeln!(
+        buf,
+        "pub type {}RequestTx = pajamax::dispatch_server::RequestTx<{}Request, {}Reply>;
+         pub type {}RequestRx = pajamax::dispatch_server::RequestRx<{}Request, {}Reply>;",
+        service.name, service.name, service.name, service.name, service.name, service.name
+    )
+    .unwrap();
+}
+
+// trait ${Service}Dispatch
+//
+// Application uses this to define how to dispatch requests.
+fn gen_trait_service_dispatch(service: &prost_build::Service, buf: &mut String) {
+    writeln!(buf, "#[allow(unused_variables)]").unwrap();
+    writeln!(buf, "pub trait {}Dispatch {{", service.name).unwrap();
+
+    for m in service.methods.iter() {
+        writeln!(
+            buf,
+            "fn {} (&self, req: &{}) -> Option<&{}RequestTx> {{ None }}",
+            m.name, m.input_type, service.name
+        )
+        .unwrap();
+    }
+    writeln!(buf, "}}").unwrap();
+}
+
 // impl PajamaxDispatchService for ${Service}
+//
+// Intermediary between pajamax::PajamaxDispatchService and application's dispatch-context.
 fn gen_dispatch_server(service: &prost_build::Service, buf: &mut String) {
     writeln!(
         buf,
         "impl<T> pajamax::dispatch_server::PajamaxDispatchService for {}Server<T>
-         where T: {}
-         {{ ",
-        service.name, service.name
+         where T: {}Dispatch + {}
+         {{
+             fn dispatch_to(&self, request: &Self::Request) -> Option<&{}RequestTx> {{
+                 match request {{",
+        service.name, service.name, service.name, service.name
     )
     .unwrap();
 
-    writeln!(
-        buf,
-        "fn dispatch_to(&self, _request: &Self::Request)
-         -> Option<pajamax::dispatch_server::RequestTx<Self::Request, Self::Reply>>
-         {{
-            None
-         }} }}"
-    )
-    .unwrap();
+    for m in service.methods.iter() {
+        writeln!(
+            buf,
+            "{}Request::{}(req) => {}Dispatch::{}(&self.inner, req),",
+            service.name, m.proto_name, service.name, m.name
+        )
+        .unwrap();
+    }
+    writeln!(buf, "}} }} }}").unwrap();
+}
+
+fn compile_protos(
+    mode: Mode,
+    protos: &[impl AsRef<Path>],
+    includes: &[impl AsRef<Path>],
+) -> std::io::Result<()> {
+    prost_build::Config::new()
+        .service_generator(Box::new(PajamaxGen { mode }))
+        .compile_protos(protos, includes)
 }
 
 /// Simple .proto compiling.
 ///
 /// If you need more options, call the `prost_build::Config` directly
-/// with `.service_generator(Box::new(PajamaxGen()))`, just like this
+/// with `.service_generator(Box::new(PajamaxGen{mode}))`, just like this
 /// function's source code.
-pub fn compile_protos(
+pub fn compile_protos_in_local(
     protos: &[impl AsRef<Path>],
     includes: &[impl AsRef<Path>],
 ) -> std::io::Result<()> {
-    prost_build::Config::new()
-        .service_generator(Box::new(PajamaxGen()))
-        .compile_protos(protos, includes)
+    compile_protos(Mode::Local, protos, includes)
+}
+
+pub fn compile_protos_in_dispatch(
+    protos: &[impl AsRef<Path>],
+    includes: &[impl AsRef<Path>],
+) -> std::io::Result<()> {
+    compile_protos(Mode::Dispatch, protos, includes)
 }

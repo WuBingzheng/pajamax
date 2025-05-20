@@ -13,15 +13,11 @@ pub type RequestRx<Req, Reply> = mpsc::Receiver<DispatchRequest<Req, Reply>>;
 pub type ResponseTx<Reply> = mpsc::SyncSender<DispatchResponse<Reply>>;
 pub type ResponseRx<Reply> = mpsc::Receiver<DispatchResponse<Reply>>;
 
-struct DispatchWith<Reply> {
+pub struct DispatchRequest<Req, Reply> {
     stream_id: u32,
     req_data_len: usize,
-    resp_tx: ResponseTx<Reply>,
-}
-
-pub struct DispatchRequest<Req, Reply> {
     request: Req,
-    with: DispatchWith<Reply>,
+    resp_tx: ResponseTx<Reply>,
 }
 
 pub struct DispatchResponse<Reply> {
@@ -30,9 +26,35 @@ pub struct DispatchResponse<Reply> {
     response: Response<Reply>,
 }
 
+impl<Req, Reply> DispatchRequest<Req, Reply> {
+    pub fn handle<S>(self, ctx: &mut S)
+    where
+        S: PajamaxService<Request = Req, Reply = Reply>,
+    {
+        let Self {
+            request,
+            stream_id,
+            req_data_len,
+            resp_tx,
+        } = self;
+
+        let response = ctx.call(request);
+
+        let resp = DispatchResponse {
+            stream_id,
+            req_data_len,
+            response,
+        };
+
+        let _ = resp_tx.send(resp);
+    }
+}
+
 pub trait PajamaxDispatchService: PajamaxService {
-    fn dispatch_to(&self, request: &Self::Request)
-        -> Option<RequestTx<Self::Request, Self::Reply>>;
+    fn dispatch_to(
+        &self,
+        request: &Self::Request,
+    ) -> Option<&RequestTx<Self::Request, Self::Reply>>;
 }
 
 pub struct DispatchConnection<S: PajamaxDispatchService> {
@@ -84,11 +106,9 @@ impl<S: PajamaxDispatchService> ConnectionMode for DispatchConnection<S> {
             Some(req_tx) => {
                 let disp_req = DispatchRequest {
                     request,
-                    with: DispatchWith {
-                        stream_id,
-                        req_data_len,
-                        resp_tx: self.resp_tx.clone(),
-                    },
+                    stream_id,
+                    req_data_len,
+                    resp_tx: self.resp_tx.clone(),
                 };
                 if let Err(_err) = req_tx.try_send(disp_req) {
                     todo!("unavailable");
