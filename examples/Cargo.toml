@@ -8,6 +8,10 @@ name = "examples"
 name = "helloworld"
 path = "src/helloworld.rs"
 
+[[bin]]
+name = "dict_store"
+path = "src/dict_store.rs"
+
 [dependencies]
 pajamax = {version="*", path="../pajamax/"}
 prost = "0.13.5"

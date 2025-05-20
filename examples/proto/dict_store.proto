@@ -1,0 +1,41 @@
+syntax = "proto3";
+package dict_store;
+
+service DictStore {
+    rpc Get (Key) returns (Value);
+    rpc Set (Entry) returns (SetReply);
+    rpc Delete (Key) returns (Value);
+
+    rpc ListShard (ListShardRequest) returns (ListShardReply);
+
+    rpc Stats (EmptyRequest) returns (StatsReply); // global stats
+}
+
+message Key {
+    string key = 1;
+}
+message Value {
+    double value = 1;
+}
+
+message Entry {
+    string key = 1;
+    double value = 2;
+}
+message SetReply {
+    optional double old_value = 2;
+}
+
+message ListShardRequest {
+    uint32 shard = 1;
+}
+message ListShardReply {
+    uint32 count = 1;
+    repeated Entry entries = 2;
+}
+
+message EmptyRequest {
+}
+message StatsReply {
+    uint32 count = 1;
+}
