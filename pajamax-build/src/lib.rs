@@ -164,6 +164,8 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
         #[allow(dead_code)]
         impl<T: {}> {}Server<T> {{
             pub fn new(inner: T) -> Self {{ Self {{ inner }} }}
+
+            pub fn get_inner(&self) -> &T {{ &self.inner }}
         }}",
         service.name, service.name, service.name, service.name, service.name, service.name
     )

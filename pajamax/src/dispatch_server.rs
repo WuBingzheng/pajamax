@@ -79,7 +79,10 @@ impl<S: PajamaxDispatchService> DispatchConnection<S> {
     pub fn new(srv: S, c: &TcpStream) -> Self {
         let resp_end = ResponseEnd::new(&c);
         let (resp_tx, resp_rx) = mpsc::sync_channel(1000);
-        std::thread::spawn(move || response_routine(resp_end, resp_rx));
+        std::thread::Builder::new()
+            .name(String::from("pajamax-dmo")) // dispatch-mode-output
+            .spawn(move || response_routine(resp_end, resp_rx))
+            .unwrap();
 
         Self { srv, resp_tx }
     }

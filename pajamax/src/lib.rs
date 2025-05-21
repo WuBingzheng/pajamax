@@ -217,7 +217,10 @@ where
     for c in listener.incoming() {
         let c = c?;
         let srv_conn = LocalConnection::new(srv.clone(), &c);
-        thread::spawn(move || connection::handle(srv_conn, c));
+        thread::Builder::new()
+            .name(String::from("pajamax-w")) // worker
+            .spawn(move || connection::handle(srv_conn, c))
+            .unwrap();
     }
     unreachable!();
 }
@@ -232,7 +235,10 @@ where
     for c in listener.incoming() {
         let c = c?;
         let srv_conn = DispatchConnection::new(srv.clone(), &c);
-        thread::spawn(move || connection::handle(srv_conn, c));
+        thread::Builder::new()
+            .name(String::from("pajamax-dmi")) // dispatch-mode-input
+            .spawn(move || connection::handle(srv_conn, c))
+            .unwrap();
     }
     unreachable!();
 }
