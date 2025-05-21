@@ -72,7 +72,6 @@ impl prost_build::ServiceGenerator for PajamaxGen {
             gen_trait_service_dispatch(&service, buf);
             gen_dispatch_server(&service, buf);
         }
-        println!("{buf}");
     }
 }
 
@@ -134,6 +133,7 @@ fn gen_reply(service: &prost_build::Service, buf: &mut String) {
         buf,
         "impl pajamax::RespEncode for {}Reply {{
             fn encode(&self, output: &mut Vec<u8>) -> Result<(), prost::EncodeError> {{
+                use prost::Message;
                 match self {{",
         service.name
     )
@@ -161,6 +161,7 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
             }}
         }}
 
+        #[allow(dead_code)]
         impl<T: {}> {}Server<T> {{
             pub fn new(inner: T) -> Self {{ Self {{ inner }} }}
         }}",
@@ -171,8 +172,7 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
     // impl pajamax::PajamaxService for ${Service}
     writeln!(
         buf,
-        "use prost::Message as _;
-        impl<T> pajamax::PajamaxService for {}Server<T>
+        "impl<T> pajamax::PajamaxService for {}Server<T>
         where T: {}
         {{
             type Request = {}Request;
@@ -187,6 +187,7 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
         "fn request_parse_fn_by_path(
             path: &[u8],
         ) -> Option<pajamax::ParseFn<Self::Request>> {{
+            use prost::Message;
             match path {{"
     )
     .unwrap();
@@ -224,7 +225,9 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
 fn gen_dispatch_channels(service: &prost_build::Service, buf: &mut String) {
     writeln!(
         buf,
-        "pub type {}RequestTx = pajamax::dispatch_server::RequestTx<{}Request, {}Reply>;
+        "#[allow(dead_code)]
+         pub type {}RequestTx = pajamax::dispatch_server::RequestTx<{}Request, {}Reply>;
+         #[allow(dead_code)]
          pub type {}RequestRx = pajamax::dispatch_server::RequestRx<{}Request, {}Reply>;",
         service.name, service.name, service.name, service.name, service.name, service.name
     )
