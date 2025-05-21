@@ -9,18 +9,18 @@
 //!
 //!    ```toml
 //!    [dependencies]
-//!    pajamax = "0.1"
+//!    pajamax = "0.2"
 //!    prost = "0.1"
 //!
 //!    [build-dependencies]
-//!    pajamax-build = "0.1"
+//!    pajamax-build = "0.2"
 //!    ```
 //!
 //! 2. Call `pajamax-build` in build.rs:
 //!
 //!    ```rust,ignore
 //!    fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!        pajamax_build::compile_protos(&["proto/helloworld.proto"], &["."])?;
+//!        pajamax_build::compile_protos_local(&["proto/helloworld.proto"], &["."])?;
 //!        Ok(())
 //!    }
 //!    ```
@@ -31,7 +31,7 @@
 //!    fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!       prost_build::Config::new()
 //!           // add your options here
-//!           .service_generator(Box::new(pajamax_build::PajamaxGen()))
+//!           .service_generator(Box::new(pajamax_build::PajamaxGen{ mode: Mode::Local })
 //!           .compile_protos(&["proto/helloworld.proto"], &["."])
 //!    }
 //!    ```
@@ -39,6 +39,9 @@
 //! 3. Call `pajamax` in your source code. See the
 //!    [`helloworld`](https://github.com/WuBingzheng/pajamax/tree/main/examples/src/helloworld.rs)
 //!    for more details.
+//!
+//! See [other examples](https://github.com/WuBingzheng/pajamax/tree/main/examples/)
+//! for other usages.
 
 use std::fmt::Write;
 use std::path::Path;
@@ -54,7 +57,7 @@ pub enum Mode {
 ///
 /// See the module's document for usage.
 pub struct PajamaxGen {
-    mode: Mode,
+    pub mode: Mode,
 }
 
 impl prost_build::ServiceGenerator for PajamaxGen {
@@ -93,7 +96,7 @@ fn gen_trait_service(service: &prost_build::Service, buf: &mut String, mode: Mod
     for m in service.methods.iter() {
         writeln!(
             buf,
-            "fn {}(&mut self, req: {}) -> Result<{}, pajamax::status::Status> {}",
+            "fn {}(&mut self, req: {}) -> pajamax::Response<{}> {}",
             m.name, m.input_type, m.output_type, method_end
         )
         .unwrap();
@@ -201,7 +204,7 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
     // - impl PajamaxService::call()
     writeln!(
         buf,
-        "fn call(&mut self, req: Self::Request) -> Result<Self::Reply, pajamax::status::Status> {{
+        "fn call(&mut self, req: Self::Request) -> pajamax::Response<Self::Reply> {{
             match req {{"
     )
     .unwrap();

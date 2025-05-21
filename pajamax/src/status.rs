@@ -1,9 +1,26 @@
+//! gRPC status.
+
+/// gRPC status.
+///
+/// There is no constructor method. You need to set the 2 members
+/// to construct yourself.
+///
+/// Examples:
+///
+/// ```rust,ignore
+/// return Err(Status{
+///     code: Code::NotFound,
+///     message: format!("key {} is not found", &req.key),
+/// });
+/// ```
 pub struct Status {
     pub code: Code,
     pub message: String,
 }
 
-/// [gRPC status codes]: https://github.com/grpc/grpc/blob/master/doc/statuscodes.md#status-codes-and-their-use-in-grpc
+/// gRPC status code.
+///
+/// See [gRPC status codes](https://github.com/grpc/grpc/blob/master/doc/statuscodes.md#status-codes-and-their-use-in-grpc).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Code {
     Ok = 0,

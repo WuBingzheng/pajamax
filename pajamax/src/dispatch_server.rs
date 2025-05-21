@@ -1,3 +1,7 @@
+//! Dispatch mode.
+//!
+//! See the module's document for details.
+
 use std::net::TcpStream;
 use std::sync::mpsc;
 
@@ -7,12 +11,19 @@ use crate::response_end::ResponseEnd;
 use crate::Response;
 use crate::{PajamaxService, RespEncode};
 
+/// Send end of request channel for dispatch mode.
 pub type RequestTx<Req, Reply> = mpsc::SyncSender<DispatchRequest<Req, Reply>>;
+
+/// Receive end of request channel for dispatch mode.
 pub type RequestRx<Req, Reply> = mpsc::Receiver<DispatchRequest<Req, Reply>>;
 
-pub type ResponseTx<Reply> = mpsc::SyncSender<DispatchResponse<Reply>>;
-pub type ResponseRx<Reply> = mpsc::Receiver<DispatchResponse<Reply>>;
+/// Send end of response channel for dispatch mode.
+type ResponseTx<Reply> = mpsc::SyncSender<DispatchResponse<Reply>>;
 
+/// Receive end of response channel for dispatch mode.
+type ResponseRx<Reply> = mpsc::Receiver<DispatchResponse<Reply>>;
+
+/// Dispatched request in dispatch mode.
 pub struct DispatchRequest<Req, Reply> {
     stream_id: u32,
     req_data_len: usize,
@@ -20,7 +31,8 @@ pub struct DispatchRequest<Req, Reply> {
     resp_tx: ResponseTx<Reply>,
 }
 
-pub struct DispatchResponse<Reply> {
+/// Dispatched response in dispatch mode.
+struct DispatchResponse<Reply> {
     stream_id: u32,
     req_data_len: usize,
     response: Response<Reply>,
@@ -50,6 +62,7 @@ impl<Req, Reply> DispatchRequest<Req, Reply> {
     }
 }
 
+/// `pajamax-build` crate implements this for dispatch mode.
 pub trait PajamaxDispatchService: PajamaxService {
     fn dispatch_to(
         &self,
@@ -57,7 +70,7 @@ pub trait PajamaxDispatchService: PajamaxService {
     ) -> Option<&RequestTx<Self::Request, Self::Reply>>;
 }
 
-pub struct DispatchConnection<S: PajamaxDispatchService> {
+pub(crate) struct DispatchConnection<S: PajamaxDispatchService> {
     srv: S,
     resp_tx: ResponseTx<S::Reply>,
 }

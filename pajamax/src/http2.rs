@@ -273,6 +273,7 @@ fn build_u32(n: u32, buf: &mut [u8]) {
     buf.copy_from_slice(&tmp);
 }
 
+/// Used by `pajamax-build` crate.
 pub trait RespEncode {
     fn encode(&self, output: &mut Vec<u8>) -> Result<(), prost::EncodeError>;
 }

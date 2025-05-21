@@ -175,11 +175,11 @@ mod hpack_decoder;
 mod hpack_encoder;
 mod http2;
 mod huffman;
+mod local_server;
+mod macros;
 mod response_end;
 
 pub mod dispatch_server;
-pub mod local_server;
-pub mod macros;
 pub mod status;
 
 pub use crate::http2::RespEncode;
@@ -187,6 +187,7 @@ pub use crate::http2::RespEncode;
 use crate::dispatch_server::{DispatchConnection, PajamaxDispatchService};
 use crate::local_server::LocalConnection;
 
+/// Wrapper of Result<Reply, Status>.
 pub type Response<Reply> = Result<Reply, crate::status::Status>;
 
 /// Parse the request body from input data.
