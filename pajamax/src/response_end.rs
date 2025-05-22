@@ -49,6 +49,10 @@ impl ResponseEnd {
             if self.req_count < 50 && self.output.len() < 15000 {
                 return Ok(());
             }
+        } else {
+            if self.output.len() == 0 {
+                return Ok(());
+            }
         }
 
         http2::build_window_update(self.req_data_len, &mut self.output);

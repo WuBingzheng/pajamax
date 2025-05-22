@@ -84,7 +84,9 @@ pub(crate) struct DispatchConnection<S: PajamaxDispatchService> {
 impl<S: PajamaxDispatchService> DispatchConnection<S> {
     pub fn new(srv: S, c: &TcpStream, counter: Arc<AtomicUsize>) -> Self {
         counter.fetch_add(1, Ordering::Relaxed);
+
         let resp_end = ResponseEnd::new(&c);
+
         let (resp_tx, resp_rx) = mpsc::sync_channel(1000);
         std::thread::Builder::new()
             .name(String::from("pajamax-dmo")) // dispatch-mode-output

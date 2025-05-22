@@ -138,11 +138,10 @@ pub fn handshake(connection: &mut TcpStream) -> Result<(), Error> {
         return Err(Error::InvalidHttp2("invalid handshake message"));
     }
 
-    // send empty SETTINGS
-    // TODO
+    // send SETTINGS
     let mut output = Vec::new();
-    output.resize(9, 0);
-    Frame::build_head(0, FrameKind::Settings, 0, 0, &mut output);
+    build_settings(3, 1000, &mut output); // SETTINGS_MAX_CONCURRENT_STREAMS
+    build_settings(5, 16 * 1024, &mut output); // SETTINGS_MAX_FRAME_SIZE
     connection.write_all(&output)?;
 
     Ok(())
@@ -264,11 +263,26 @@ pub fn build_window_update(len: usize, output: &mut Vec<u8>) {
     build_u32(len as u32, &mut output[start + Frame::HEAD_SIZE..]);
 }
 
+fn build_settings(ident: u16, value: u32, output: &mut Vec<u8>) {
+    let start = output.len();
+    output.resize(start + Frame::HEAD_SIZE + 6, 0);
+
+    Frame::build_head(6, FrameKind::Settings, 0, 0, &mut output[start..]);
+
+    let pos = start + Frame::HEAD_SIZE;
+    build_u16(ident, &mut output[pos..pos + 2]);
+    build_u32(value, &mut output[pos + 2..pos + 6]);
+}
+
 fn parse_u32(buf: &[u8]) -> u32 {
     let tmp: [u8; 4] = [buf[0], buf[1], buf[2], buf[3]];
     u32::from_be_bytes(tmp)
 }
 fn build_u32(n: u32, buf: &mut [u8]) {
+    let tmp = n.to_be_bytes();
+    buf.copy_from_slice(&tmp);
+}
+fn build_u16(n: u16, buf: &mut [u8]) {
     let tmp = n.to_be_bytes();
     buf.copy_from_slice(&tmp);
 }
