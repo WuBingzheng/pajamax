@@ -8,6 +8,7 @@ use std::sync::mpsc;
 use crate::connection::ConnectionMode;
 use crate::error::Error;
 use crate::response_end::ResponseEnd;
+use crate::status::{Code, Status};
 use crate::Response;
 use crate::{PajamaxService, RespEncode};
 
@@ -39,6 +40,8 @@ struct DispatchResponse<Reply> {
 }
 
 impl<Req, Reply> DispatchRequest<Req, Reply> {
+    // handle the request
+    // call its method and send it back to response channel
     pub fn handle<S>(self, ctx: &mut S)
     where
         S: PajamaxService<Request = Req, Reply = Reply>,
@@ -88,6 +91,7 @@ impl<S: PajamaxDispatchService> DispatchConnection<S> {
     }
 }
 
+// output thread
 fn response_routine<Reply: RespEncode + Send + Sync + 'static>(
     mut resp_end: ResponseEnd,
     resp_rx: ResponseRx<Reply>,
@@ -103,7 +107,7 @@ fn response_routine<Reply: RespEncode + Send + Sync + 'static>(
         };
 
         resp_end.build(resp.stream_id, resp.response, resp.req_data_len);
-        resp_end.flush(0)?;
+        resp_end.flush(15000)?;
     }
 
     Err(Error::ChannelClosed)
@@ -126,18 +130,40 @@ impl<S: PajamaxDispatchService> ConnectionMode for DispatchConnection<S> {
                     req_data_len,
                     resp_tx: self.resp_tx.clone(),
                 };
-                if let Err(_err) = req_tx.try_send(disp_req) {
-                    todo!("unavailable");
+
+                // dispatch the request by channel
+                if let Err(err) = req_tx.try_send(disp_req) {
+                    // if dispatch fails,
+                    let status = match err {
+                        mpsc::TrySendError::Full(_) => Status {
+                            code: Code::Unavailable,
+                            message: String::from("dispatch channel is full"),
+                        },
+                        mpsc::TrySendError::Disconnected(_) => Status {
+                            code: Code::Internal,
+                            message: String::from("dispatch channel is closed"),
+                        },
+                    };
+
+                    // send error response
+                    let disp_resp = DispatchResponse {
+                        response: Err(status),
+                        stream_id,
+                        req_data_len,
+                    };
+                    let _ = self.resp_tx.send(disp_resp);
                 }
             }
             None => {
+                // handle the request directly
                 let response = self.srv.call(request);
+
                 let disp_resp = DispatchResponse {
                     response,
                     stream_id,
                     req_data_len,
                 };
-                self.resp_tx.send(disp_resp).unwrap(); // TODO
+                let _ = self.resp_tx.send(disp_resp);
             }
         }
         Ok(())

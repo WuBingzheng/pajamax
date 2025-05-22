@@ -67,12 +67,12 @@ for the code and more details.
 
 Scenario limitations:
 
-- Your business must be synchronous;
+- Synchronous business logical (but see the *Dispatch* mode below);
 - Deployed in internal environment, behind the gateway and not directly exposed to the outside.
 
 Benefits:
 
-- 10x performance improvement;
+- 10X performance improvement;
 - No asynchronous programming;
 - Less dependencies, less compilation time, less executable size.
 
@@ -86,8 +86,74 @@ Loss:
 It's like pajamas, super comfortable and convenient to wear, but only
 suitable at home, not for going out in public.
 
-## Usage
+## Modes: Local and Dispatch
 
+The business logic code discussed above is all synchronous. There is
+only one thread for each connection. We call it *Local* mode.
+The architecture is very simple, as shown in the figure below.
+
+```
+        /-----------------------\
+       (      TCP connection     )
+        \--^-----------------+--/
+           |                 |
+           |send             |recv
+     +=====+=================V=====+
+     |                             |
+     |      application codes      |
+     |                             |
+     +===========pajamax framework=+
+```
+
+We also support another mode, *Dispatch* mode. This involves multiple threads:
+
+- one input thread, which receives TCP data, parses requests, and dispatches
+  them to the specified backend threads according to user definitions;
+- the backend threads are managed by the user themselves; They handle the
+  requests and generate responses, just like in the *Local* mode;
+- one output thread, which encodes responses and sends the data.
+
+The requests and responses are transfered by channels. The architecture is
+shown in the figure below.
+
+```
+        /-----------------------\
+       (      TCP connection     )
+        \--^-----------------+--/
+           |                 |
+           |send             |recv
+    +======+=====+  +========V=======+
+    | +----+---+ |  |  +----------+  |
+    | | encode | |  |  | dispatch |  |
+    | +-^----^-+ |  |  +--+----+--+  |
+    |   |    :   |  |     :    |     |
+    +===+====:===+  | +---V--+ |     |
+        |    :      | |handle| |     |
+        |    :      | +---+--+ |     |
+        |    :      +=====:====+=====+
+        |    :............:    |
+     +==+======================V==+
+     |                            |+
+     |     application codes      ||+
+     |                            |||
+     +============================+||
+      +============================+|
+       +============================+
+```
+
+Applications can also decide some requests not to be dispatched, which
+will be handled in the input-thread, just like in the *Local* mode.
+But the responses have to be transfered to the output thread to sent.
+As shown by the dashed line in the figure above.
+
+Applications only need to implement 2 traits to define how to dispatch
+requests and how to handle requests. You do not need to handle the
+message transfer or encoding, which will be handled by Pajamax.
+
+See the [dict-store](https://github.com/WuBingzheng/pajamax/blob/main/examples/src/dict_store.rs)
+example for more details.
+
+## Usage
 The usage of Pajamax is very similar to that of Tonic.
 
 See [`pajamax-build`](https://docs.rs/pajamax-build) crate document for more detail.
@@ -100,8 +166,6 @@ Todo list:
 
 - More test;
 - Configuration builder;
-- Hooks like tower's Layer;
-- A new mode, under which network threads send the received requests to other
-  threads for processing via a channel.
+- Hooks like tower's Layer.
 
 License: MIT
