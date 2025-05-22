@@ -101,13 +101,13 @@ fn response_routine<Reply: RespEncode + Send + Sync + 'static>(
             Ok(resp) => resp,
             Err(mpsc::TryRecvError::Disconnected) => break,
             Err(mpsc::TryRecvError::Empty) => {
-                resp_end.flush(0)?;
+                resp_end.flush(true)?;
                 resp_rx.recv()?
             }
         };
 
         resp_end.build(resp.stream_id, resp.response, resp.req_data_len);
-        resp_end.flush(15000)?;
+        resp_end.flush(false)?;
     }
 
     Err(Error::ChannelClosed)

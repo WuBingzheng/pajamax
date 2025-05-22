@@ -31,10 +31,10 @@ impl<S: PajamaxService> ConnectionMode for LocalConnection<S> {
 
         self.resp_end.build(stream_id, response, req_data_len);
 
-        self.resp_end.flush(15000)
+        self.resp_end.flush(false)
     }
 
     fn defer_flush(&mut self) -> Result<(), std::io::Error> {
-        self.resp_end.flush(0)
+        self.resp_end.flush(true)
     }
 }
