@@ -166,7 +166,9 @@
 //! - Configuration builder;
 //! - Hooks like tower's Layer.
 
-use std::net::{TcpListener, ToSocketAddrs};
+use std::net::{TcpListener, TcpStream, ToSocketAddrs};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::thread;
 
 mod connection;
@@ -213,16 +215,7 @@ where
     S: PajamaxService + Clone + Send + Sync + 'static,
     A: ToSocketAddrs,
 {
-    let listener = TcpListener::bind(addr)?;
-    for c in listener.incoming() {
-        let c = c?;
-        let srv_conn = LocalConnection::new(srv.clone(), &c);
-        thread::Builder::new()
-            .name(String::from("pajamax-w")) // worker
-            .spawn(move || connection::handle(srv_conn, c))
-            .unwrap();
-    }
-    unreachable!();
+    do_serve(|s, c| LocalConnection::new(srv.clone(), s, c), addr)
 }
 
 /// Start the server in dispatch-mode.
@@ -231,12 +224,26 @@ where
     S: PajamaxDispatchService + Clone + Send + Sync + 'static,
     A: ToSocketAddrs,
 {
+    do_serve(|s, c| DispatchConnection::new(srv.clone(), s, c), addr)
+}
+
+fn do_serve<S, F, A>(new_conn: F, addr: A) -> std::io::Result<()>
+where
+    S: connection::ConnectionMode + Send + Sync + 'static,
+    F: Fn(&TcpStream, Arc<AtomicUsize>) -> S,
+    A: ToSocketAddrs,
+{
+    let counter = Arc::new(AtomicUsize::new(0));
+
     let listener = TcpListener::bind(addr)?;
     for c in listener.incoming() {
+        if counter.load(Ordering::Relaxed) > 100 {
+            continue;
+        }
         let c = c?;
-        let srv_conn = DispatchConnection::new(srv.clone(), &c);
+        let srv_conn = new_conn(&c, counter.clone());
         thread::Builder::new()
-            .name(String::from("pajamax-dmi")) // dispatch-mode-input
+            .name(String::from("pajamax-w"))
             .spawn(move || connection::handle(srv_conn, c))
             .unwrap();
     }

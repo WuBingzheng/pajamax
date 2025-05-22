@@ -3,7 +3,9 @@
 //! See the module's document for details.
 
 use std::net::TcpStream;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
+use std::sync::Arc;
 
 use crate::connection::ConnectionMode;
 use crate::error::Error;
@@ -76,10 +78,12 @@ pub trait PajamaxDispatchService: PajamaxService {
 pub(crate) struct DispatchConnection<S: PajamaxDispatchService> {
     srv: S,
     resp_tx: ResponseTx<S::Reply>,
+    counter: Arc<AtomicUsize>,
 }
 
 impl<S: PajamaxDispatchService> DispatchConnection<S> {
-    pub fn new(srv: S, c: &TcpStream) -> Self {
+    pub fn new(srv: S, c: &TcpStream, counter: Arc<AtomicUsize>) -> Self {
+        counter.fetch_add(1, Ordering::Relaxed);
         let resp_end = ResponseEnd::new(&c);
         let (resp_tx, resp_rx) = mpsc::sync_channel(1000);
         std::thread::Builder::new()
@@ -87,7 +91,17 @@ impl<S: PajamaxDispatchService> DispatchConnection<S> {
             .spawn(move || response_routine(resp_end, resp_rx))
             .unwrap();
 
-        Self { srv, resp_tx }
+        Self {
+            srv,
+            resp_tx,
+            counter,
+        }
+    }
+}
+
+impl<S: PajamaxDispatchService> Drop for DispatchConnection<S> {
+    fn drop(&mut self) {
+        self.counter.fetch_sub(1, Ordering::Relaxed);
     }
 }
 

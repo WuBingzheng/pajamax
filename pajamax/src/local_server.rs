@@ -1,4 +1,6 @@
 use std::net::TcpStream;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use crate::connection::ConnectionMode;
 use crate::response_end::ResponseEnd;
@@ -7,14 +9,23 @@ use crate::PajamaxService;
 pub struct LocalConnection<S: PajamaxService> {
     srv: S,
     resp_end: ResponseEnd,
+    counter: Arc<AtomicUsize>,
 }
 
 impl<S: PajamaxService> LocalConnection<S> {
-    pub fn new(srv: S, c: &TcpStream) -> Self {
+    pub fn new(srv: S, c: &TcpStream, counter: Arc<AtomicUsize>) -> Self {
+        counter.fetch_add(1, Ordering::Relaxed);
         Self {
             srv,
             resp_end: ResponseEnd::new(c),
+            counter,
         }
+    }
+}
+
+impl<S: PajamaxService> Drop for LocalConnection<S> {
+    fn drop(&mut self) {
+        self.counter.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
