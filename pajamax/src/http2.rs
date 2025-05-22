@@ -1,6 +1,7 @@
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
+use crate::config::*;
 use crate::error::Error;
 use crate::hpack_encoder::Encoder;
 use crate::status::Status;
@@ -140,8 +141,8 @@ pub fn handshake(connection: &mut TcpStream) -> Result<(), Error> {
 
     // send SETTINGS
     let mut output = Vec::new();
-    build_settings(3, 1000, &mut output); // SETTINGS_MAX_CONCURRENT_STREAMS
-    build_settings(5, 16 * 1024, &mut output); // SETTINGS_MAX_FRAME_SIZE
+    build_settings(3, MAX_CONCURRENT_STREAMS as u32, &mut output); // SETTINGS_MAX_CONCURRENT_STREAMS
+    build_settings(5, MAX_FRAME_SIZE as u32, &mut output); // SETTINGS_MAX_FRAME_SIZE
     connection.write_all(&output)?;
 
     Ok(())

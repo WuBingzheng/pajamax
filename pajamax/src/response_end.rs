@@ -1,6 +1,7 @@
 use std::io::Write;
 use std::net::TcpStream;
 
+use crate::config::*;
 use crate::hpack_encoder::Encoder;
 use crate::http2;
 use crate::Response;
@@ -20,7 +21,7 @@ impl ResponseEnd {
             req_count: 0,
             req_data_len: 0,
             hpack_encoder: Encoder::new(),
-            output: Vec::with_capacity(16 * 1024),
+            output: Vec::with_capacity(MAX_FLUSH_SIZE),
         }
     }
 
@@ -46,7 +47,7 @@ impl ResponseEnd {
     // flush the output buffer
     pub fn flush(&mut self, is_force: bool) -> Result<(), std::io::Error> {
         if !is_force {
-            if self.req_count < 50 && self.output.len() < 15000 {
+            if self.req_count < MAX_FLUSH_REQUESTS && self.output.len() < MAX_FLUSH_SIZE {
                 return Ok(());
             }
         } else {

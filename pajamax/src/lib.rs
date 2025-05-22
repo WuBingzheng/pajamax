@@ -171,6 +171,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
 
+mod config;
 mod connection;
 mod error;
 mod hpack_decoder;
@@ -184,13 +185,13 @@ mod response_end;
 pub mod dispatch_server;
 pub mod status;
 
-pub use crate::http2::RespEncode;
+pub use http2::RespEncode;
 
-use crate::dispatch_server::{DispatchConnection, PajamaxDispatchService};
-use crate::local_server::LocalConnection;
+use dispatch_server::{DispatchConnection, PajamaxDispatchService};
+use local_server::LocalConnection;
 
 /// Wrapper of Result<Reply, Status>.
-pub type Response<Reply> = Result<Reply, crate::status::Status>;
+pub type Response<Reply> = Result<Reply, status::Status>;
 
 /// Parse the request body from input data.
 pub type ParseFn<R> = fn(&[u8]) -> Result<R, prost::DecodeError>;
@@ -237,7 +238,7 @@ where
 
     let listener = TcpListener::bind(addr)?;
     for c in listener.incoming() {
-        if counter.load(Ordering::Relaxed) > 100 {
+        if counter.load(Ordering::Relaxed) >= config::MAX_CONCURRENT_CONNECTIONS {
             continue;
         }
         let c = c?;

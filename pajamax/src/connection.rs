@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::net::TcpStream;
 
+use crate::config::*;
 use crate::error::Error;
 use crate::hpack_decoder::Decoder;
 use crate::http2::*;
@@ -30,7 +31,7 @@ where
     handshake(&mut c)?;
 
     let mut input = Vec::new();
-    input.resize(16 * 1024, 0);
+    input.resize(MAX_FRAME_SIZE, 0);
 
     let mut streams: HashMap<u32, ParseFn<<S::Service as PajamaxService>::Request>> =
         HashMap::new();
