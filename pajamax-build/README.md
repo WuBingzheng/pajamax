@@ -11,18 +11,18 @@ The usage is very similar to that of Tonic.
 
    ```toml
    [dependencies]
-   pajamax = "0.1"
+   pajamax = "0.2"
    prost = "0.1"
 
    [build-dependencies]
-   pajamax-build = "0.1"
+   pajamax-build = "0.2"
    ```
 
 2. Call `pajamax-build` in build.rs:
 
    ```rust,ignore
    fn main() -> Result<(), Box<dyn std::error::Error>> {
-       pajamax_build::compile_protos(&["proto/helloworld.proto"], &["."])?;
+       pajamax_build::compile_protos_local(&["proto/helloworld.proto"], &["."])?;
        Ok(())
    }
    ```
@@ -33,11 +33,14 @@ The usage is very similar to that of Tonic.
    fn main() -> Result<(), Box<dyn std::error::Error>> {
       prost_build::Config::new()
           // add your options here
-          .service_generator(Box::new(pajamax_build::PajamaxGen()))
+          .service_generator(Box::new(pajamax_build::PajamaxGen{ mode: Mode::Local }))
           .compile_protos(&["proto/helloworld.proto"], &["."])
    }
    ```
 
 3. Call `pajamax` in your source code. See the
    [`helloworld`](https://github.com/WuBingzheng/pajamax/tree/main/examples/src/helloworld.rs)
-   for more details.
+   and [other examples](https://github.com/WuBingzheng/pajamax/tree/main/examples/)
+   for details.
+
+License: MIT

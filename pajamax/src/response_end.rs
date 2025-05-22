@@ -22,6 +22,7 @@ impl ResponseEnd {
         }
     }
 
+    // build response to output buffer
     pub fn build<Reply: http2::RespEncode>(
         &mut self,
         stream_id: u32,
@@ -39,6 +40,7 @@ impl ResponseEnd {
         }
     }
 
+    // flush the output buffer
     pub fn flush(&mut self, min_len: usize) -> Result<(), std::io::Error> {
         if self.output.len() <= min_len {
             return Ok(());

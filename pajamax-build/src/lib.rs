@@ -31,17 +31,15 @@
 //!    fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!       prost_build::Config::new()
 //!           // add your options here
-//!           .service_generator(Box::new(pajamax_build::PajamaxGen{ mode: Mode::Local })
+//!           .service_generator(Box::new(pajamax_build::PajamaxGen{ mode: Mode::Local }))
 //!           .compile_protos(&["proto/helloworld.proto"], &["."])
 //!    }
 //!    ```
 //!
 //! 3. Call `pajamax` in your source code. See the
 //!    [`helloworld`](https://github.com/WuBingzheng/pajamax/tree/main/examples/src/helloworld.rs)
-//!    for more details.
-//!
-//! See [other examples](https://github.com/WuBingzheng/pajamax/tree/main/examples/)
-//! for other usages.
+//!    and [other examples](https://github.com/WuBingzheng/pajamax/tree/main/examples/)
+//!    for details.
 
 use std::fmt::Write;
 use std::path::Path;
@@ -290,11 +288,10 @@ fn compile_protos(
         .compile_protos(protos, includes)
 }
 
-/// Simple .proto compiling.
+/// Simple .proto compiling, in Local mode.
 ///
 /// If you need more options, call the `prost_build::Config` directly
-/// with `.service_generator(Box::new(PajamaxGen{mode}))`, just like this
-/// function's source code.
+/// with `.service_generator(Box::new(PajamaxGen{mode}))`.
 pub fn compile_protos_in_local(
     protos: &[impl AsRef<Path>],
     includes: &[impl AsRef<Path>],
@@ -302,6 +299,10 @@ pub fn compile_protos_in_local(
     compile_protos(Mode::Local, protos, includes)
 }
 
+/// Simple .proto compiling, in Dispatch mode.
+///
+/// If you need more options, call the `prost_build::Config` directly
+/// with `.service_generator(Box::new(PajamaxGen{mode}))`.
 pub fn compile_protos_in_dispatch(
     protos: &[impl AsRef<Path>],
     includes: &[impl AsRef<Path>],
