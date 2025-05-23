@@ -185,6 +185,7 @@ mod response_end;
 pub mod dispatch_server;
 pub mod status;
 
+pub use config::Config;
 pub use http2::RespEncode;
 
 use dispatch_server::{DispatchConnection, PajamaxDispatchService};
@@ -216,7 +217,11 @@ where
     S: PajamaxService + Clone + Send + Sync + 'static,
     A: ToSocketAddrs,
 {
-    do_serve(|s, c| LocalConnection::new(srv.clone(), s, c), addr)
+    do_serve(
+        |s, cnter, cfg| LocalConnection::new(srv.clone(), s, cnter, cfg),
+        addr,
+        Config::new(),
+    )
 }
 
 /// Start the server in dispatch-mode.
@@ -225,27 +230,31 @@ where
     S: PajamaxDispatchService + Clone + Send + Sync + 'static,
     A: ToSocketAddrs,
 {
-    do_serve(|s, c| DispatchConnection::new(srv.clone(), s, c), addr)
+    do_serve(
+        |s, cnter, cfg| DispatchConnection::new(srv.clone(), s, cnter, cfg),
+        addr,
+        Config::new(),
+    )
 }
 
-fn do_serve<S, F, A>(new_conn: F, addr: A) -> std::io::Result<()>
+pub(crate) fn do_serve<S, F, A>(new_conn: F, addr: A, config: Config) -> std::io::Result<()>
 where
     S: connection::ConnectionMode + Send + Sync + 'static,
-    F: Fn(&TcpStream, Arc<AtomicUsize>) -> S,
+    F: Fn(&TcpStream, Arc<AtomicUsize>, &Config) -> S,
     A: ToSocketAddrs,
 {
     let counter = Arc::new(AtomicUsize::new(0));
 
     let listener = TcpListener::bind(addr)?;
     for c in listener.incoming() {
-        if counter.load(Ordering::Relaxed) >= config::MAX_CONCURRENT_CONNECTIONS {
+        if counter.load(Ordering::Relaxed) >= config.max_concurrent_connections {
             continue;
         }
         let c = c?;
-        let srv_conn = new_conn(&c, counter.clone());
+        let srv_conn = new_conn(&c, counter.clone(), &config);
         thread::Builder::new()
             .name(String::from("pajamax-w"))
-            .spawn(move || connection::handle(srv_conn, c))
+            .spawn(move || connection::handle(srv_conn, c, config))
             .unwrap();
     }
     unreachable!();

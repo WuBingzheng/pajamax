@@ -128,7 +128,7 @@ impl<'a> Frame<'a> {
     }
 }
 
-pub fn handshake(connection: &mut TcpStream) -> Result<(), Error> {
+pub fn handshake(connection: &mut TcpStream, config: &Config) -> Result<(), Error> {
     // parse the magic
     let mut input = vec![0; 24];
     let len = connection.read(&mut input)?;
@@ -141,8 +141,8 @@ pub fn handshake(connection: &mut TcpStream) -> Result<(), Error> {
 
     // send SETTINGS
     let mut output = Vec::new();
-    build_settings(3, MAX_CONCURRENT_STREAMS as u32, &mut output); // SETTINGS_MAX_CONCURRENT_STREAMS
-    build_settings(5, MAX_FRAME_SIZE as u32, &mut output); // SETTINGS_MAX_FRAME_SIZE
+    build_settings(3, config.max_concurrent_streams as u32, &mut output);
+    build_settings(5, config.max_frame_size as u32, &mut output);
     connection.write_all(&output)?;
 
     Ok(())

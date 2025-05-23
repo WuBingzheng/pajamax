@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::net::TcpStream;
 
-use crate::config::*;
+use crate::config::Config;
 use crate::error::Error;
 use crate::hpack_decoder::Decoder;
 use crate::http2::*;
@@ -24,14 +24,14 @@ pub trait ConnectionMode {
     }
 }
 
-pub fn handle<S>(mut srv_conn: S, mut c: TcpStream) -> Result<(), Error>
+pub fn handle<S>(mut srv_conn: S, mut c: TcpStream, config: Config) -> Result<(), Error>
 where
     S: ConnectionMode,
 {
-    handshake(&mut c)?;
+    handshake(&mut c, &config)?;
 
     let mut input = Vec::new();
-    input.resize(MAX_FRAME_SIZE, 0);
+    input.resize(config.max_frame_size, 0);
 
     let mut streams: HashMap<u32, ParseFn<<S::Service as PajamaxService>::Request>> =
         HashMap::new();
