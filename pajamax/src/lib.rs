@@ -211,7 +211,7 @@ pub trait PajamaxService {
     fn call(&mut self, request: Self::Request) -> Response<Self::Reply>;
 }
 
-/// Start the server in local-mode.
+/// Start server with default configurations, in local-mode.
 pub fn serve_local<S, A>(srv: S, addr: A) -> std::io::Result<()>
 where
     S: PajamaxService + Clone + Send + Sync + 'static,
@@ -224,7 +224,7 @@ where
     )
 }
 
-/// Start the server in dispatch-mode.
+/// Start server with default configurations, in dispatch-mode.
 pub fn serve_dispatch<S, A>(srv: S, addr: A) -> std::io::Result<()>
 where
     S: PajamaxDispatchService + Clone + Send + Sync + 'static,
@@ -251,6 +251,9 @@ where
             continue;
         }
         let c = c?;
+        c.set_read_timeout(Some(config.idle_timeout))?;
+        c.set_write_timeout(Some(config.write_timeout))?;
+
         let srv_conn = new_conn(&c, counter.clone(), &config);
         thread::Builder::new()
             .name(String::from("pajamax-w"))

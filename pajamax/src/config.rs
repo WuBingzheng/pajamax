@@ -1,4 +1,5 @@
 use std::net::ToSocketAddrs;
+use std::time::Duration;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Config {
@@ -7,6 +8,8 @@ pub struct Config {
     pub(crate) max_frame_size: usize,
     pub(crate) max_flush_requests: usize,
     pub(crate) max_flush_size: usize,
+    pub(crate) idle_timeout: Duration,
+    pub(crate) write_timeout: Duration,
 }
 
 impl Config {
@@ -17,6 +20,8 @@ impl Config {
             max_frame_size: 16 * 1024,
             max_flush_requests: 50,
             max_flush_size: 15000,
+            idle_timeout: Duration::from_secs(60),
+            write_timeout: Duration::from_secs(10),
         }
     }
 
@@ -66,6 +71,22 @@ impl Config {
     pub fn max_flush_size(self, n: usize) -> Self {
         Self {
             max_frame_size: n,
+            ..self
+        }
+    }
+
+    /// Default: 60 seconds
+    pub fn idle_timeout(self, d: Duration) -> Self {
+        Self {
+            idle_timeout: d,
+            ..self
+        }
+    }
+
+    /// Default: 10 seconds
+    pub fn write_timeout(self, d: Duration) -> Self {
+        Self {
+            write_timeout: d,
             ..self
         }
     }
