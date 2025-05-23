@@ -58,10 +58,10 @@ The above two optimizations eliminate the cost of the asynchronous runtime
 and reduce the cost of HTTP/2 protocol parsing, resulting in a significant
 performance improvement.
 
-In my benchmark, Pajamax, which is implemented based on the above optimizations,
-is 10X faster than Tonic.
-See [the benchmark](https://github.com/WuBingzheng/pajamax/tree/main/benchmark)
-for the code and more details.
+We measured that Pajamax is up to 10X faster than Tonic using `grpc-bench`
+project.  See the
+[result](https://github.com/WuBingzheng/pajamax/blob/main/benchmark.md)
+for details.
 
 ## Conclusion
 
@@ -72,7 +72,7 @@ Scenario limitations:
 
 Benefits:
 
-- 10X performance improvement;
+- 10X performance improvement at most;
 - No asynchronous programming;
 - Less dependencies, less compilation time, less executable size.
 
