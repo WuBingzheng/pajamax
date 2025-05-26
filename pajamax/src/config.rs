@@ -91,6 +91,7 @@ impl Config {
         }
     }
 
+    /*
     pub fn serve_local<S, A>(self, srv: S, addr: A) -> std::io::Result<()>
     where
         S: crate::PajamaxService + Clone + Send + Sync + 'static,
@@ -115,4 +116,5 @@ impl Config {
             self,
         )
     }
+    */
 }

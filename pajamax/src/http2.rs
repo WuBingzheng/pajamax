@@ -128,14 +128,16 @@ impl<'a> Frame<'a> {
     }
 }
 
-pub fn handshake(connection: &mut TcpStream, config: &Config) -> Result<(), Error> {
+pub fn handshake(connection: &mut mio::net::TcpStream, config: &Config) -> Result<(), Error> {
     // parse the magic
     let mut input = vec![0; 24];
     let len = connection.read(&mut input)?;
     if len != 24 {
+        println!("handshake: {} {:?}", len, &input);
         return Err(Error::InvalidHttp2("too short handshake"));
     }
     if input != *b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n" {
+        println!("handshake: {} {:?}", len, &input);
         return Err(Error::InvalidHttp2("invalid handshake message"));
     }
 

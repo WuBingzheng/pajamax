@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::io::Read;
-use std::net::TcpStream;
+
+use mio::net::TcpStream; // TODO remove mio here
 
 use crate::config::Config;
 use crate::error::Error;
@@ -24,11 +25,11 @@ pub trait ConnectionMode {
     }
 }
 
-pub fn handle<S>(mut srv_conn: S, mut c: TcpStream, config: Config) -> Result<(), Error>
+pub fn handle<S>(srv_conn: &mut S, c: &mut TcpStream, config: &Config) -> Result<usize, Error>
 where
     S: ConnectionMode,
 {
-    handshake(&mut c, &config)?;
+    handshake(c, config)?;
 
     let mut input = Vec::new();
     input.resize(config.max_frame_size, 0);
@@ -38,10 +39,11 @@ where
     let mut hpack_decoder: Decoder<S::Service> = Decoder::new();
 
     let mut last_end = 0;
-    while let Ok(len) = c.read(&mut input[last_end..]) {
+    loop {
+        let len = c.read(&mut input[last_end..])?;
         if len == 0 {
             // connection closed
-            return Ok(());
+            return Ok(0);
         }
         let end = last_end + len;
 
@@ -99,5 +101,4 @@ where
             last_end = 0;
         }
     }
-    Ok(())
 }

@@ -168,7 +168,7 @@
 
 use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{mpsc, Arc};
 use std::thread;
 
 mod config;
@@ -180,6 +180,7 @@ mod http2;
 mod huffman;
 mod local_server;
 mod macros;
+mod poll;
 mod response_end;
 
 pub mod dispatch_server;
@@ -211,6 +212,7 @@ pub trait PajamaxService {
     fn call(&mut self, request: Self::Request) -> Response<Self::Reply>;
 }
 
+/*
 /// Start server with default configurations, in local-mode.
 pub fn serve_local<S, A>(srv: S, addr: A) -> std::io::Result<()>
 where
@@ -236,29 +238,54 @@ where
         Config::new(),
     )
 }
+*/
 
+/*
 pub(crate) fn do_serve<S, F, A>(new_conn: F, addr: A, config: Config) -> std::io::Result<()>
 where
     S: connection::ConnectionMode + Send + Sync + 'static,
-    F: Fn(&TcpStream, Arc<AtomicUsize>, &Config) -> S,
+    F: Fn(&TcpStream, Arc<AtomicUsize>, &Config) -> S + Send + Sync + 'static + Clone,
+    A: ToSocketAddrs,
+{
+*/
+
+pub fn serve_local<S, A>(srv: S, addr: A) -> std::io::Result<()>
+where
+    S: PajamaxService + Clone + Send + Sync + 'static,
     A: ToSocketAddrs,
 {
     let counter = Arc::new(AtomicUsize::new(0));
 
+    let mut workers = Vec::new();
+    for _ in 0..4 {
+        let (stream_tx, stream_rx) = mpsc::sync_channel(1000);
+        let (waker_tx, waker_rx) = mpsc::sync_channel(1);
+
+        let counter = counter.clone();
+        let srv = srv.clone();
+        thread::spawn(move || {
+            poll::worker_thread(stream_rx, waker_tx, srv, counter, Config::new()).unwrap();
+        });
+
+        let waker = waker_rx.recv().unwrap();
+
+        workers.push((stream_tx, waker));
+    }
+
+    let mut rri = 0;
+
     let listener = TcpListener::bind(addr)?;
     for c in listener.incoming() {
-        if counter.load(Ordering::Relaxed) >= config.max_concurrent_connections {
-            continue;
-        }
-        let c = c?;
-        c.set_read_timeout(Some(config.idle_timeout))?;
-        c.set_write_timeout(Some(config.write_timeout))?;
+        //if counter.load(Ordering::Relaxed) >= config.max_concurrent_connections {
+        //continue;
+        //}
+        println!("new conn");
 
-        let srv_conn = new_conn(&c, counter.clone(), &config);
-        thread::Builder::new()
-            .name(String::from("pajamax-w"))
-            .spawn(move || connection::handle(srv_conn, c, config))
-            .unwrap();
+        let (stream_tx, waker) = &workers[rri % 4];
+        rri += 1;
+
+        stream_tx.send(c?).unwrap();
+        waker.wake().unwrap();
     }
     unreachable!();
 }

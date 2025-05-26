@@ -11,7 +11,9 @@ keywords = ["grpc", "protobuf", "synchronous"]
 categories = ["network-programming"]
 
 [dependencies]
+mio = {version="1.0.2", features=["net", "os-poll", "os-ext"]}
 prost = "0.13"
+slab = "0.4.9"
 
 [build-dependencies]
 prost-build = "0.13"
