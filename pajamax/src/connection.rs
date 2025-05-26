@@ -25,80 +25,101 @@ pub trait ConnectionMode {
     }
 }
 
-pub fn handle<S>(srv_conn: &mut S, c: &mut TcpStream, config: &Config) -> Result<usize, Error>
-where
-    S: ConnectionMode,
-{
-    handshake(c, config)?;
+pub struct Connection<S: ConnectionMode> {
+    c: TcpStream,
+    srv_conn: S,
+    input: Vec<u8>,
+    streams: HashMap<u32, ParseFn<<S::Service as PajamaxService>::Request>>,
+    hpack_decoder: Decoder<S::Service>,
+    has_handshaked: bool,
+    last_end: usize,
+}
 
-    let mut input = Vec::new();
-    input.resize(config.max_frame_size, 0);
-
-    let mut streams: HashMap<u32, ParseFn<<S::Service as PajamaxService>::Request>> =
-        HashMap::new();
-    let mut hpack_decoder: Decoder<S::Service> = Decoder::new();
-
-    let mut last_end = 0;
-    loop {
-        let len = c.read(&mut input[last_end..])?;
-        if len == 0 {
-            // connection closed
-            return Ok(0);
+impl<S: ConnectionMode> Connection<S> {
+    pub fn new(srv_conn: S, c: TcpStream, config: &Config) -> Self {
+        let mut input = Vec::new();
+        input.resize(config.max_frame_size, 0);
+        Self {
+            c,
+            srv_conn,
+            input,
+            streams: HashMap::new(),
+            hpack_decoder: Decoder::new(),
+            has_handshaked: false,
+            last_end: 0,
         }
-        let end = last_end + len;
+    }
 
-        let mut pos = 0;
-        while let Some(frame) = Frame::parse(&input[pos..end]) {
-            pos += Frame::HEAD_SIZE + frame.len; // for next loop
+    pub fn handle(&mut self) -> Result<usize, Error>
+    where
+        S: ConnectionMode,
+    {
+        if !self.has_handshaked {
+            handshake(&mut self.c, &Config::new())?;
+            self.has_handshaked = true;
+        }
 
-            match frame.kind {
-                FrameKind::Data => {
-                    let req_buf = frame.process_data()?;
-
-                    // grpc-level-protocal
-                    if req_buf.len() == 0 {
-                        continue;
-                    }
-                    if req_buf.len() < 5 {
-                        return Err(Error::InvalidHttp2("DATA frame too short for grpc"));
-                    }
-                    let req_buf = &req_buf[5..];
-
-                    // find the request-parse-fn
-                    let stream_id = frame.stream_id;
-                    let Some(parse_fn) = streams.remove(&stream_id) else {
-                        return Err(Error::InvalidHttp2("DATA frame without HEADERS"));
-                    };
-
-                    let request = (parse_fn)(req_buf)?;
-
-                    // call the method!
-                    srv_conn.handle_call(request, stream_id, frame.len)?;
-                }
-                FrameKind::Headers => {
-                    let headers_buf = frame.process_headers()?;
-
-                    let parse_fn = hpack_decoder.find_path(headers_buf)?;
-
-                    if streams.insert(frame.stream_id, parse_fn).is_some() {
-                        return Err(Error::InvalidHttp2("duplicated HEADERS frame"));
-                    }
-                }
-                _ => (),
+        loop {
+            let len = self.c.read(&mut self.input[self.last_end..])?;
+            if len == 0 {
+                // connection closed
+                return Ok(0);
             }
-        }
+            let end = self.last_end + len;
 
-        srv_conn.defer_flush()?;
+            let mut pos = 0;
+            while let Some(frame) = Frame::parse(&self.input[pos..end]) {
+                pos += Frame::HEAD_SIZE + frame.len; // for next loop
 
-        // for next loop
-        if pos == 0 {
-            return Err(Error::InvalidHttp2("too long frame"));
-        }
-        if pos < end {
-            input.copy_within(pos..end, 0);
-            last_end = end - pos;
-        } else {
-            last_end = 0;
+                match frame.kind {
+                    FrameKind::Data => {
+                        let req_buf = frame.process_data()?;
+
+                        // grpc-level-protocal
+                        if req_buf.len() == 0 {
+                            continue;
+                        }
+                        if req_buf.len() < 5 {
+                            return Err(Error::InvalidHttp2("DATA frame too short for grpc"));
+                        }
+                        let req_buf = &req_buf[5..];
+
+                        // find the request-parse-fn
+                        let stream_id = frame.stream_id;
+                        let Some(parse_fn) = self.streams.remove(&stream_id) else {
+                            return Err(Error::InvalidHttp2("DATA frame without HEADERS"));
+                        };
+
+                        let request = (parse_fn)(req_buf)?;
+
+                        // call the method!
+                        self.srv_conn.handle_call(request, stream_id, frame.len)?;
+                    }
+                    FrameKind::Headers => {
+                        let headers_buf = frame.process_headers()?;
+
+                        let parse_fn = self.hpack_decoder.find_path(headers_buf)?;
+
+                        if self.streams.insert(frame.stream_id, parse_fn).is_some() {
+                            return Err(Error::InvalidHttp2("duplicated HEADERS frame"));
+                        }
+                    }
+                    _ => (),
+                }
+            }
+
+            self.srv_conn.defer_flush()?;
+
+            // for next loop
+            if pos == 0 {
+                return Err(Error::InvalidHttp2("too long frame"));
+            }
+            if pos < end {
+                self.input.copy_within(pos..end, 0);
+                self.last_end = end - pos;
+            } else {
+                self.last_end = 0;
+            }
         }
     }
 }

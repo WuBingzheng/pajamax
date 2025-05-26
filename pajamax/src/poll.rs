@@ -7,7 +7,7 @@ use mio::{Events, Interest, Poll, Token, Waker};
 use slab::Slab;
 
 use crate::config::Config;
-use crate::connection;
+use crate::connection::Connection;
 use crate::error::Error;
 
 const WAKER: usize = usize::MAX;
@@ -40,9 +40,7 @@ where
         for event in events.iter() {
             match event.token().0 {
                 WAKER => {
-                    println!("waken");
                     while let Ok(stream) = stream_rx.try_recv() {
-                        println!("get stream");
                         //let srv_conn = new_conn(&stream, counter.clone(), &config);
                         let srv_conn = crate::local_server::LocalConnection::new(
                             srv.clone(),
@@ -56,12 +54,15 @@ where
                         poll.registry()
                             .register(&mut stream, Token(slab.vacant_key()), Interest::READABLE)
                             .unwrap();
-                        slab.insert((srv_conn, stream));
+
+                        let connection = Connection::new(srv_conn, stream, &config);
+                        slab.insert(connection);
                     }
                 }
                 token => {
-                    let (srv_conn, stream) = slab.get_mut(token).unwrap();
-                    match connection::handle(srv_conn, stream, &config) {
+                    //let (srv_conn, stream) = slab.get_mut(token).unwrap();
+                    let connection = slab.get_mut(token).unwrap();
+                    match connection.handle() {
                         Ok(0) => {
                             slab.remove(token);
                         }

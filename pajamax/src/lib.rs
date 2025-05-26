@@ -254,7 +254,7 @@ where
     S: PajamaxService + Clone + Send + Sync + 'static,
     A: ToSocketAddrs,
 {
-    let counter = Arc::new(AtomicUsize::new(0));
+    //let counter = Arc::new(AtomicUsize::new(0));
 
     let mut workers = Vec::new();
     for _ in 0..4 {
