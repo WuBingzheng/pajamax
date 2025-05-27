@@ -42,11 +42,19 @@ impl<S: PajamaxService> ConnectionMode for LocalConnection<S> {
         let response = self.srv.call(request);
 
         self.resp_end.build(stream_id, response, req_data_len);
-
-        self.resp_end.flush(false)
+        Ok(())
+        //self.resp_end.flush(false)
     }
 
     fn defer_flush(&mut self) -> Result<(), std::io::Error> {
-        self.resp_end.flush(true)
+        Ok(())
+        //self.resp_end.flush(true)
+    }
+
+    fn send_output(&self) -> &[u8] {
+        &self.resp_end.output
+    }
+    fn send_output_go(&mut self, len: usize) {
+        todo!()
     }
 }

@@ -11,6 +11,9 @@ keywords = ["grpc", "protobuf", "synchronous"]
 categories = ["network-programming"]
 
 [dependencies]
+anyhow = "1.0.98"
+io-uring = "0.7.7"
+libc = "0.2.172"
 mio = {version="1.0.2", features=["net", "os-poll", "os-ext"]}
 prost = "0.13"
 slab = "0.4.9"

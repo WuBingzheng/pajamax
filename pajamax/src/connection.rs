@@ -23,6 +23,13 @@ pub trait ConnectionMode {
     fn defer_flush(&mut self) -> Result<(), std::io::Error> {
         Ok(())
     }
+
+    fn send_output(&self) -> &[u8] {
+        todo!()
+    }
+    fn send_output_go(&mut self, len: usize) {
+        todo!()
+    }
 }
 
 pub struct Connection<S: ConnectionMode> {
@@ -48,6 +55,17 @@ impl<S: ConnectionMode> Connection<S> {
             has_handshaked: false,
             last_end: 0,
         }
+    }
+
+    pub fn read_input(&self) -> &[u8] {
+        &self.input[self.last_end..]
+    }
+
+    pub fn write_output(&self) -> &[u8] {
+        self.srv_conn.write_output()
+    }
+    pub fn write_output_go(&mut self, len: usize) {
+        self.srv_conn.write_output_go(len)
     }
 
     pub fn handle(&mut self) -> Result<usize, Error>

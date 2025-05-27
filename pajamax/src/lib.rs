@@ -182,6 +182,7 @@ mod local_server;
 mod macros;
 mod poll;
 mod response_end;
+mod uring;
 
 pub mod dispatch_server;
 pub mod status;
@@ -254,6 +255,8 @@ where
     S: PajamaxService + Clone + Send + Sync + 'static,
     A: ToSocketAddrs,
 {
+    uring::start_server_uring()
+    /*
     //let counter = Arc::new(AtomicUsize::new(0));
 
     let mut workers = Vec::new();
@@ -288,4 +291,5 @@ where
         waker.wake().unwrap();
     }
     unreachable!();
+    */
 }

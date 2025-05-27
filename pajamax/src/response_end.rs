@@ -11,7 +11,7 @@ pub struct ResponseEnd {
     req_count: usize,
     req_data_len: usize,
     hpack_encoder: Encoder,
-    output: Vec<u8>,
+    pub output: Vec<u8>,
 
     max_flush_requests: usize,
     max_flush_size: usize,
