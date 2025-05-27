@@ -92,3 +92,26 @@ lies in network I/O system calls. As concurrency increases, the number
 of streams arriving simultaneously on each connection grows. Consequently,
 each system call handles more requests, reducing the frequency of
 system calls and thereby enhancing performance.
+
+
+# Others
+
+I tested the multiplexing solution using the `mio` crate. The results
+were almost the same.
+
+I tested the uring solution with `io-uring` crate as well. There is a
+performance improvement when there are many concurrent connections but
+very few concurrent requests. For example, there is about a 50% performance
+improvement when `C` and `S` both are 100. I guess this might be due to
+the merging of read and write system calls across different connections.
+However, there is no significant improvement in other scenarios.
+
+I don't plan to support these two modes for now. In the context of
+internal services, it is still necessary to try to reduce the number of
+connections from the clients (e.g. gateway), thereby increasing the number
+of concurrent requests per connection, which in turn improves the performance.
+Therefore, the current mode is sufficient.
+Moreover, a fixed number of worker threads will be started in these two modes.
+If the number of connections is very low, it is easy to cause an
+imbalance in the load among threads.
+Additionally, these two modes are much more complex.
