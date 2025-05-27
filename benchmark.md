@@ -15,10 +15,10 @@ Memory: 32 GiB
 ```
 - GRPC_BENCHMARK_DURATION=20s
 - GRPC_BENCHMARK_WARMUP=5s
-- GRPC_SERVER_CPUS=$CPU (see below)
+- GRPC_SERVER_CPUS=1
 - GRPC_SERVER_RAM=512m
-- GRPC_CLIENT_CONNECTIONS=$CONN (see below)
-- GRPC_CLIENT_CONCURRENCY=1000
+- GRPC_CLIENT_CONNECTIONS=$C (see below)
+- GRPC_CLIENT_CONCURRENCY=$S (see below)
 - GRPC_CLIENT_QPS=0
 - GRPC_CLIENT_CPUS=12
 - GRPC_REQUEST_SCENARIO=complex_proto
@@ -28,56 +28,67 @@ Memory: 32 GiB
 # Results
 
 ```
---------------------------------------------------------------------------------------------------------  ---------------
-| name            |  req/s | avg. latency |   90 % in |   95 % in |   99 % in | avg. cpu | avg. memory |   req/s / cpu% |
---------------------------------------------------------------------------------------------------------  ---------------
--CPU=1, CONN=1------------------------------------------------------------------------------------------  ---------------
-| rust_pajamax    |  47311 |      1.30 ms |   8.70 ms |  11.04 ms |  23.79 ms |   10.39% |  573.33 MiB |     455351     |
-| rust_tonic_mt   |  46641 |     21.36 ms | 129.24 ms | 151.99 ms | 166.64 ms |  104.44% |     5.9 MiB |      44658     |
-------- CONN=5------------------------------------------------------------------------------------------  ---------------
-| rust_pajamax    | 184744 |      3.70 ms |   7.09 ms |   9.22 ms |  14.44 ms |   48.96% |    1.39 MiB |     377337     |
-| rust_tonic_mt   |  58727 |     16.88 ms |  67.88 ms | 103.14 ms | 159.81 ms |  104.15% |   10.98 MiB |      56386     |
-------- CONN=50-----------------------------------------------------------------------------------------  ---------------
-| rust_pajamax    | 161600 |      4.73 ms |   8.73 ms |  11.65 ms |  19.71 ms |   76.18% |    5.06 MiB |     212129     |
-| rust_tonic_mt   |  58101 |     17.10 ms |  65.95 ms |  89.59 ms | 141.64 ms |  102.57% |   13.36 MiB |      56645     |
---------------------------------------------------------------------------------------------------------  ---------------
--CPU=4, CONN=4------------------------------------------------------------------------------------------  ---------------
-| rust_pajamax    | 180144 |      3.94 ms |   7.96 ms |  10.15 ms |  14.98 ms |    41.0% |    1.32 MiB |     439376     |
-| rust_tonic_mt   | 124891 |      7.04 ms |  11.21 ms |  13.15 ms |  17.23 ms |  258.38% |   19.86 MiB |      48336     |
-------- CONN=20-----------------------------------------------------------------------------------------  ---------------
-| rust_pajamax    | 172577 |      4.27 ms |   7.56 ms |  10.09 ms |  16.69 ms |   59.21% |    2.54 MiB |     291466     |
-| rust_tonic_mt   | 123319 |      6.94 ms |  12.00 ms |  14.68 ms |  21.03 ms |  288.03% |   17.83 MiB |      42814     |
-------- CONN=200----------------------------------------------------------------------------------------  ---------------
-| rust_pajamax    | 128005 |      5.96 ms |  10.73 ms |  15.80 ms |  33.18 ms |  130.38% |   16.48 MiB |      98178     |
-| rust_tonic_mt   |  95500 |      9.01 ms |  16.34 ms |  21.16 ms |  35.64 ms |  305.25% |   23.57 MiB |      31285     |
---------------------------------------------------------------------------------------------------------  ---------------
+------------------------------------------------------------------------------------------------------------
+| name               |  req/s | avg. cpu | avg. latency |   90 % in |   95 % in |   99 % in |  avg. memory |
+--C=1:-------------------------------------------------------------------------------------------------------
+----S=1--------^2.9-----------------------------------------------------------------------------------------
+| rust_pajamax       |   8487 |   14.25% |      0.10 ms |   0.13 ms |   0.14 ms |   0.17 ms |    496.0 MiB |
+| rust_tonic_mt      |   7282 |   35.97% |      0.12 ms |   0.15 ms |   0.16 ms |   0.19 ms |     1.07 MiB |
+----S=10-------^4.2-----------------------------------------------------------------------------------------
+| rust_pajamax       |  43420 |   25.27% |      0.20 ms |   0.30 ms |   0.33 ms |   0.41 ms |    508.0 MiB |
+| rust_tonic_mt      |  40087 |   97.54% |      0.23 ms |   0.29 ms |   0.31 ms |   0.38 ms |     1.17 MiB |
+----S=100------^7.0-----------------------------------------------------------------------------------------
+| rust_pajamax       | 139524 |   41.78% |      0.67 ms |   0.85 ms |   1.07 ms |   1.66 ms |   613.33 MiB |
+| rust_tonic_mt      |  49721 |   104.1% |      1.98 ms |   2.24 ms |   2.31 ms |   2.73 ms |     1.79 MiB |
+----S=1000-----^10.4----------------------------------------------------------------------------------------
+| rust_pajamax       |  48265 |   10.49% |      1.38 ms |  10.16 ms |  12.79 ms |  22.11 ms |   634.67 MiB |
+| rust_tonic_mt      |  47286 |  106.47% |     21.08 ms | 128.25 ms | 149.66 ms | 164.35 ms |     5.97 MiB |
+--C=10:-----------------------------------------------------------------------------------------------------
+----S=10-------^1.3-----------------------------------------------------------------------------------------
+| rust_pajamax       |  34816 |  108.18% |      0.25 ms |   0.27 ms |   0.31 ms |   0.48 ms |     1.18 MiB |
+| rust_tonic_mt      |  25764 |  104.15% |      0.37 ms |   0.44 ms |   0.46 ms |   0.52 ms |      1.5 MiB |
+----S=100------^2.9-----------------------------------------------------------------------------------------
+| rust_pajamax       | 124261 |   86.16% |      0.66 ms |   1.09 ms |   1.37 ms |   2.45 ms |     1.41 MiB |
+| rust_tonic_mt      |  52982 |  105.19% |      1.85 ms |   2.64 ms |   2.80 ms |   3.21 ms |     2.82 MiB |
+----S=1000-----^7.1-----------------------------------------------------------------------------------------
+| rust_pajamax       | 183167 |   43.55% |      3.90 ms |   6.91 ms |   9.00 ms |  13.62 ms |     1.66 MiB |
+| rust_tonic_mt      |  62969 |  105.96% |     15.74 ms |  60.15 ms |  95.24 ms | 148.14 ms |    12.07 MiB |
+----S=10000----^10.8----------------------------------------------------------------------------------------
+| rust_pajamax       |  67335 |   12.78% |     23.03 ms | 252.79 ms | 393.87 ms | 923.98 ms |     1.68 MiB |
+| rust_tonic_mt      |  50396 |  103.78% |    195.71 ms | 865.93 ms |    1.13 s |    2.08 s |     78.8 MiB |
+--C=100:----------------------------------------------------------------------------------------------------
+----S=100------^1.8-----------------------------------------------------------------------------------------
+| rust_pajamax       |  42563 |  104.01% |      2.16 ms |   1.68 ms |   2.38 ms |  54.81 ms |     7.87 MiB |
+| rust_tonic_mt      |  24234 |  104.45% |      4.10 ms |   4.49 ms |   4.57 ms |   4.78 ms |     5.84 MiB |
+----S=1000-----^3.2-----------------------------------------------------------------------------------------
+| rust_pajamax       | 144842 |    98.6% |      5.25 ms |   9.80 ms |  14.04 ms |  25.94 ms |     9.03 MiB |
+| rust_tonic_mt      |  48014 |   104.5% |     20.70 ms |  74.04 ms |  90.44 ms | 144.46 ms |    14.62 MiB |
+----S=10000----^6.7-----------------------------------------------------------------------------------------
+| rust_pajamax       | 130633 |   34.75% |     62.12 ms | 130.53 ms | 204.77 ms | 339.16 ms |    10.17 MiB |
+| rust_tonic_mt      |  57798 |  103.47% |    170.28 ms | 846.56 ms | 956.41 ms |    1.73 s |    77.27 MiB |
+----S=100000---^11.0---------------------------------------------------------------------------------------
+| rust_pajamax       |  85893 |   16.78% |    273.69 ms | 618.88 ms | 733.04 ms |    1.06 s |     8.96 MiB |
+| rust_tonic_mt      |  39148 |   84.15% |       2.20 s |    5.42 s |    7.15 s |   12.25 s |   465.75 MiB |
+------------------------------------------------------------------------------------------------------------
 ```
 
-In most test cases, the CPU of Pajamax was not fully utilized. This is likely
-due to the performance of the client `ghz` can not keep up with Pajamax even
-with more CPUs. To better compare performance with Tonic, I added a column
-to the results, which shows the ratio of column `req/s` to `avg. cpu`.
+In most cases, there is a significant difference in CPU usage between Pajamax
+and Tonic. Therefore, what we are comparing here is `req/s` per `CPU`.
+The `^*` marked in the figure above represents the ratio of req/s per CPU
+between Pajamax and Tonic. It can be considered as how is Pajamax faster
+than Tonic.
 
 
 # Conclusion
 
-From the results above, it can be seen that the performance of Pajamax and
-Tonic is very different.
+As can be seen from the figure above, under the same `C`
+(concurrent connections), the higher the value of `S` (concurrent streams),
+the greater the performance advantage of Pajamax over Tonic. When `S/C` = 1000,
+that is, when there are on average 1000 concurrent streams per connection,
+Pajamax is abount 10X faster than Tonic.
 
-When the number of CPUs is the same, the req/s and CPU usage of Tonic do
-not change much for different client connection numbers, but the changes
-for Pajamax are very significant. This is because Tonic is based on `tokio`,
-which will start a fixed number (here is `GRPC_SERVER_CPUS`) of threads
-to handle requests. In contrast, Pajamax creates a thread for each
-connection, and the number of threads affects performance.
-
-When the number of connections is the same as the number of CPUs, the
-CPU utilization is very low because the client `ghz` cannot fully load
-Pajamax, but the relative utilization (the last column in the table above)
-is the highest. As the number of connections increases, the number of
-threads also increases, and the CPU utilization becomes higher. However,
-due to the performance overhead caused by thread switching, the
-relative utilization decreases.
-
-If we only look at the last column, Pajamax is up to 10 times faster than
-Tonic for few connections.
+I guess that this is because the most performance cost for Pajamax
+lies in network I/O system calls. As concurrency increases, the number
+of streams arriving simultaneously on each connection grows. Consequently,
+each system call handles more requests, reducing the frequency of
+system calls and thereby enhancing performance.
