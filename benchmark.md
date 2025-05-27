@@ -1,4 +1,4 @@
-We use [grpc-bench](https://github.com/WuBingzheng/grpc_bench/tree/add-rust_pajamax_bench)
+We use [grpc-bench](https://github.com/LesnyRumcajs/grpc_bench)
 project to compare the performance between Pajamax and Tonic.
 
 # Machine Specs
