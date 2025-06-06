@@ -1,4 +1,3 @@
-#[allow(dead_code)]
 #[derive(Debug)]
 pub enum Error {
     InvalidHttp2(&'static str),
@@ -28,3 +27,21 @@ impl From<prost::DecodeError> for Error {
         Self::InvalidProtobuf(de)
     }
 }
+
+use std::fmt;
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::InvalidHttp2(s) => write!(f, "invalid http2: {s}"),
+            Error::InvalidHpack(s) => write!(f, "invalid hpack: {s}"),
+            Error::InvalidHuffman => write!(f, "invalid huffman"),
+            Error::InvalidProtobuf(e) => write!(f, "invalid protobuf: {e}"),
+            Error::IoFail(e) => write!(f, "IO fail: {e}"),
+            Error::ChannelClosed => write!(f, "channel closed"),
+            Error::UnknownMethod(m) => write!(f, "unknown method: {m}"),
+            Error::NoPathSet => write!(f, "no :path set"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
