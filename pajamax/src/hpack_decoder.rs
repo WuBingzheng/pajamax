@@ -121,11 +121,11 @@ impl Representation {
     }
 }
 
-use crate::{PajamaxService, ParseFn};
+use crate::PajamaxService;
 
 pub struct Decoder<S: PajamaxService> {
-    dynamic_table: Vec<Option<ParseFn<S::Request>>>,
-    huffman_paths: HashMap<Vec<u8>, ParseFn<S::Request>>,
+    dynamic_table: Vec<Option<S::RequestDiscriminant>>,
+    huffman_paths: HashMap<Vec<u8>, S::RequestDiscriminant>,
 }
 
 impl<S: PajamaxService> Decoder<S> {
@@ -137,7 +137,7 @@ impl<S: PajamaxService> Decoder<S> {
         }
     }
 
-    pub fn find_path(&mut self, mut buf: &[u8]) -> Result<ParseFn<S::Request>, Error> {
+    pub fn find_path(&mut self, mut buf: &[u8]) -> Result<S::RequestDiscriminant, Error> {
         use self::Representation::*;
 
         let mut find_path = Err(Error::NoPathSet);
@@ -157,8 +157,8 @@ impl<S: PajamaxService> Decoder<S> {
                         }
 
                         let index = 61 + table_len - index;
-                        if let Some(request_parse_fn) = self.dynamic_table[index] {
-                            find_path = Ok(request_parse_fn);
+                        if let Some(req_disc) = self.dynamic_table[index] {
+                            find_path = Ok(req_disc);
                         }
                     }
                     adv
@@ -171,9 +171,9 @@ impl<S: PajamaxService> Decoder<S> {
                             let mut tmp_decode_path_buf = Vec::new();
                             let path = path.to_plain(&mut tmp_decode_path_buf)?;
 
-                            let request_parse_fn = Self::request_parse_fn_by_path(path)?;
-                            find_path = Ok(request_parse_fn);
-                            Some(request_parse_fn)
+                            let req_disc = Self::route(path)?;
+                            find_path = Ok(req_disc);
+                            Some(req_disc)
                         }
                         None => None,
                     };
@@ -187,24 +187,23 @@ impl<S: PajamaxService> Decoder<S> {
                     if let Some(path) = path {
                         match path {
                             OutStr::Plain(path) => {
-                                let request_parse_fn = Self::request_parse_fn_by_path(path)?;
-                                find_path = Ok(request_parse_fn);
+                                let req_disc = Self::route(path)?;
+                                find_path = Ok(req_disc);
                             }
 
                             OutStr::Huffman(huff_path) => match self.huffman_paths.get(huff_path) {
-                                Some(request_parse_fn) => {
-                                    find_path = Ok(*request_parse_fn);
+                                Some(req_disc) => {
+                                    find_path = Ok(*req_disc);
                                 }
                                 None => {
                                     let mut path = Vec::with_capacity(32);
                                     huffman::decode(huff_path, &mut path)?;
 
-                                    let request_parse_fn = Self::request_parse_fn_by_path(&path)?;
+                                    let req_disc = Self::route(&path)?;
 
-                                    self.huffman_paths
-                                        .insert(huff_path.to_vec(), request_parse_fn);
+                                    self.huffman_paths.insert(huff_path.to_vec(), req_disc);
 
-                                    find_path = Ok(request_parse_fn);
+                                    find_path = Ok(req_disc);
                                 }
                             },
                         }
@@ -222,8 +221,8 @@ impl<S: PajamaxService> Decoder<S> {
         find_path
     }
 
-    fn request_parse_fn_by_path(path: &[u8]) -> Result<ParseFn<S::Request>, Error> {
-        (S::request_parse_fn_by_path)(path).ok_or(Error::UnknownMethod(
+    fn route(path: &[u8]) -> Result<S::RequestDiscriminant, Error> {
+        S::route(path).ok_or(Error::UnknownMethod(
             String::from_utf8_lossy(path).to_string(),
         ))
     }

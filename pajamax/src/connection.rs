@@ -6,7 +6,7 @@ use crate::config::Config;
 use crate::error::Error;
 use crate::hpack_decoder::Decoder;
 use crate::http2::*;
-use crate::{PajamaxService, ParseFn};
+use crate::PajamaxService;
 
 // implemented by local mode and dispatch mode
 pub trait ConnectionMode {
@@ -33,7 +33,7 @@ where
     let mut input = Vec::new();
     input.resize(config.max_frame_size, 0);
 
-    let mut streams: HashMap<u32, ParseFn<<S::Service as PajamaxService>::Request>> =
+    let mut streams: HashMap<u32, <S::Service as PajamaxService>::RequestDiscriminant> =
         HashMap::new();
     let mut hpack_decoder: Decoder<S::Service> = Decoder::new();
 
@@ -62,13 +62,14 @@ where
                     }
                     let req_buf = &req_buf[5..];
 
-                    // find the request-parse-fn
+                    // find the req-disc
                     let stream_id = frame.stream_id;
-                    let Some(parse_fn) = streams.remove(&stream_id) else {
+                    let Some(req_disc) = streams.remove(&stream_id) else {
                         return Err(Error::InvalidHttp2("DATA frame without HEADERS"));
                     };
 
-                    let request = (parse_fn)(req_buf)?;
+                    // parse the request
+                    let request = S::Service::parse(req_disc, req_buf)?;
 
                     // call the method!
                     srv_conn.handle_call(request, stream_id, frame.len)?;
@@ -76,9 +77,9 @@ where
                 FrameKind::Headers => {
                     let headers_buf = frame.process_headers()?;
 
-                    let parse_fn = hpack_decoder.find_path(headers_buf)?;
+                    let req_disc = hpack_decoder.find_path(headers_buf)?;
 
-                    if streams.insert(frame.stream_id, parse_fn).is_some() {
+                    if streams.insert(frame.stream_id, req_disc).is_some() {
                         return Err(Error::InvalidHttp2("duplicated HEADERS frame"));
                     }
                 }

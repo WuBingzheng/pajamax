@@ -194,20 +194,22 @@ use local_server::LocalConnection;
 /// Wrapper of Result<Reply, Status>.
 pub type Response<Reply> = Result<Reply, status::Status>;
 
-/// Parse the request body from input data.
-pub type ParseFn<R> = fn(&[u8]) -> Result<R, prost::DecodeError>;
-
 /// Used by `pajamax-build` crate. It should implement this for service in .proto file.
 pub trait PajamaxService {
     type Request;
+    type RequestDiscriminant: Clone + Copy;
     type Reply: RespEncode + Send + Sync + 'static;
 
-    // On receiving a HEADERS frame, call this to locate the gRPC method
-    // by `:path` header, and returns that method's request-parse-handler
-    // which is used to parse the following DATA frame.
-    fn request_parse_fn_by_path(path: &[u8]) -> Option<ParseFn<Self::Request>>;
+    // call this to locate the gRPC method by `:path` header in HEADER frame
+    fn route(path: &[u8]) -> Option<Self::RequestDiscriminant>;
 
-    // Call methods' handlers on the request, and return response.
+    // call this to parse request in DATA frame
+    fn parse(
+        disc: Self::RequestDiscriminant,
+        buf: &[u8],
+    ) -> Result<Self::Request, prost::DecodeError>;
+
+    // call methods' handlers on the request, and return response
     fn call(&mut self, request: Self::Request) -> Response<Self::Reply>;
 }
 

@@ -112,6 +112,15 @@ fn gen_request(service: &prost_build::Service, buf: &mut String) {
         writeln!(buf, "{}({}),", m.proto_name, m.input_type).unwrap();
     }
     writeln!(buf, "}}").unwrap();
+
+    // RequestDiscriminant
+    writeln!(buf, "#[derive(Debug, PartialEq, Clone, Copy)]").unwrap();
+    writeln!(buf, "pub enum {}RequestDiscriminant {{", service.name).unwrap();
+
+    for m in service.methods.iter() {
+        writeln!(buf, "{},", m.proto_name).unwrap();
+    }
+    writeln!(buf, "}}").unwrap();
 }
 
 // enum ${Service}Reply
@@ -175,19 +184,19 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
         "impl<T> pajamax::PajamaxService for {}Server<T>
         where T: {}
         {{
+            type RequestDiscriminant = {}RequestDiscriminant;
             type Request = {}Request;
             type Reply = {}Reply;",
-        service.name, service.name, service.name, service.name
+        service.name, service.name, service.name, service.name, service.name
     )
     .unwrap();
 
-    // - impl PajamaxService::request_parse_fn_by_path()
+    // - impl PajamaxService::route()
     writeln!(
         buf,
-        "fn request_parse_fn_by_path(
+        "fn route(
             path: &[u8],
-        ) -> Option<pajamax::ParseFn<Self::Request>> {{
-            use prost::Message;
+        ) -> Option<Self::RequestDiscriminant> {{
             match path {{"
     )
     .unwrap();
@@ -195,13 +204,31 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
     for m in service.methods.iter() {
         writeln!(
             buf,
-            "b\"/{}.{}/{}\" => Some(|buf| {}::decode(buf).map(Self::Request::{})),",
-            service.package, service.name, m.proto_name, m.input_type, m.proto_name
+            "b\"/{}.{}/{}\" => Some(Self::RequestDiscriminant::{}),",
+            service.package, service.name, m.proto_name, m.proto_name
         )
         .unwrap();
     }
     writeln!(buf, "_ => None, }} }}").unwrap();
 
+    // - impl PajamaxService::call()
+    writeln!(
+        buf,
+        "fn parse(disc: Self::RequestDiscriminant, buf: &[u8]) -> Result<Self::Request, prost::DecodeError> {{
+            use prost::Message;
+            match disc {{"
+    )
+    .unwrap();
+
+    for m in service.methods.iter() {
+        writeln!(
+            buf,
+            "{}RequestDiscriminant::{} => {}::decode(buf).map(Self::Request::{}),",
+            service.name, m.proto_name, m.input_type, m.proto_name
+        )
+        .unwrap();
+    }
+    writeln!(buf, "}} }}").unwrap();
     // - impl PajamaxService::call()
     writeln!(
         buf,
