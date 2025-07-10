@@ -1,5 +1,6 @@
 use std::io::Write;
 use std::net::TcpStream;
+use std::sync::{Arc, Mutex};
 
 use crate::config::Config;
 use crate::hpack_encoder::Encoder;
@@ -7,7 +8,7 @@ use crate::http2;
 use crate::Response;
 
 pub struct ResponseEnd {
-    c: TcpStream,
+    c: Arc<Mutex<TcpStream>>,
     req_count: usize,
     req_data_len: usize,
     hpack_encoder: Encoder,
@@ -18,9 +19,9 @@ pub struct ResponseEnd {
 }
 
 impl ResponseEnd {
-    pub fn new(c: &TcpStream, config: &Config) -> Self {
+    pub fn new(c: Arc<Mutex<TcpStream>>, config: &Config) -> Self {
         Self {
-            c: c.try_clone().unwrap(),
+            c,
             req_count: 0,
             req_data_len: 0,
             hpack_encoder: Encoder::new(),
@@ -48,6 +49,8 @@ impl ResponseEnd {
                 http2::build_status(stream_id, status, &mut self.hpack_encoder, &mut self.output);
             }
         }
+
+        // TODO call flush() here
     }
 
     // flush the output buffer
@@ -64,7 +67,7 @@ impl ResponseEnd {
 
         http2::build_window_update(self.req_data_len, &mut self.output);
 
-        self.c.write_all(&self.output)?;
+        self.c.lock().unwrap().write_all(&self.output)?;
 
         self.output.clear();
         self.req_count = 0;

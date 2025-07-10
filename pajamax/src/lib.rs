@@ -166,11 +166,6 @@
 //! - Configuration builder;
 //! - Hooks like tower's Layer.
 
-use std::net::{TcpListener, TcpStream, ToSocketAddrs};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::thread;
-
 mod config;
 mod connection;
 mod error;
@@ -178,18 +173,14 @@ mod hpack_decoder;
 mod hpack_encoder;
 mod http2;
 mod huffman;
-mod local_server;
 mod macros;
 mod response_end;
 
-pub mod dispatch_server;
+pub mod dispatch;
 pub mod status;
 
 pub use config::Config;
 pub use http2::RespEncode;
-
-use dispatch_server::{DispatchConnection, PajamaxDispatchService};
-use local_server::LocalConnection;
 
 /// Wrapper of Result<Reply, Status>.
 pub type Response<Reply> = Result<Reply, status::Status>;
@@ -209,58 +200,20 @@ pub trait PajamaxService {
         buf: &[u8],
     ) -> Result<Self::Request, prost::DecodeError>;
 
+    fn dispatch_to(
+        &self,
+        request: &Self::Request,
+    ) -> Option<&crate::dispatch::RequestTx<Self::Request, Self::Reply>>;
+
     // call methods' handlers on the request, and return response
     fn call(&mut self, request: Self::Request) -> Response<Self::Reply>;
 }
 
-/// Start server with default configurations, in local-mode.
-pub fn serve_local<S, A>(srv: S, addr: A) -> std::io::Result<()>
+/// Start server with default configurations.
+pub fn serve<S, A>(srv: S, addr: A) -> std::io::Result<()>
 where
     S: PajamaxService + Clone + Send + Sync + 'static,
-    A: ToSocketAddrs,
+    A: std::net::ToSocketAddrs,
 {
-    do_serve(
-        |s, cnter, cfg| LocalConnection::new(srv.clone(), s, cnter, cfg),
-        addr,
-        Config::new(),
-    )
-}
-
-/// Start server with default configurations, in dispatch-mode.
-pub fn serve_dispatch<S, A>(srv: S, addr: A) -> std::io::Result<()>
-where
-    S: PajamaxDispatchService + Clone + Send + Sync + 'static,
-    A: ToSocketAddrs,
-{
-    do_serve(
-        |s, cnter, cfg| DispatchConnection::new(srv.clone(), s, cnter, cfg),
-        addr,
-        Config::new(),
-    )
-}
-
-pub(crate) fn do_serve<S, F, A>(new_conn: F, addr: A, config: Config) -> std::io::Result<()>
-where
-    S: connection::ConnectionMode + Send + Sync + 'static,
-    F: Fn(&TcpStream, Arc<AtomicUsize>, &Config) -> S,
-    A: ToSocketAddrs,
-{
-    let counter = Arc::new(AtomicUsize::new(0));
-
-    let listener = TcpListener::bind(addr)?;
-    for c in listener.incoming() {
-        if counter.load(Ordering::Relaxed) >= config.max_concurrent_connections {
-            continue;
-        }
-        let c = c?;
-        c.set_read_timeout(Some(config.idle_timeout))?;
-        c.set_write_timeout(Some(config.write_timeout))?;
-
-        let srv_conn = new_conn(&c, counter.clone(), &config);
-        thread::Builder::new()
-            .name(String::from("pajamax-w"))
-            .spawn(move || connection::handle(srv_conn, c, config))
-            .unwrap();
-    }
-    unreachable!();
+    connection::serve_with_config(srv, addr, Config::new())
 }

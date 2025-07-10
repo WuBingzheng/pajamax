@@ -91,28 +91,11 @@ impl Config {
         }
     }
 
-    pub fn serve_local<S, A>(self, srv: S, addr: A) -> std::io::Result<()>
+    pub fn serve<S, A>(self, srv: S, addr: A) -> std::io::Result<()>
     where
         S: crate::PajamaxService + Clone + Send + Sync + 'static,
         A: ToSocketAddrs,
     {
-        crate::do_serve(
-            |s, cnter, cfg| crate::LocalConnection::new(srv.clone(), s, cnter, cfg),
-            addr,
-            self,
-        )
-    }
-
-    /// Start the server in dispatch-mode.
-    pub fn serve_dispatch<S, A>(self, srv: S, addr: A) -> std::io::Result<()>
-    where
-        S: crate::PajamaxDispatchService + Clone + Send + Sync + 'static,
-        A: ToSocketAddrs,
-    {
-        crate::do_serve(
-            |s, cnter, cfg| crate::DispatchConnection::new(srv.clone(), s, cnter, cfg),
-            addr,
-            self,
-        )
+        crate::connection::serve_with_config(srv, addr, self)
     }
 }

@@ -1,42 +1,68 @@
 use std::collections::HashMap;
 use std::io::Read;
-use std::net::TcpStream;
+use std::net::{TcpListener, TcpStream, ToSocketAddrs};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 use crate::config::Config;
+use crate::dispatch::DispatchCtx;
 use crate::error::Error;
 use crate::hpack_decoder::Decoder;
 use crate::http2::*;
+use crate::response_end::ResponseEnd;
 use crate::PajamaxService;
 
-// implemented by local mode and dispatch mode
-pub trait ConnectionMode {
-    type Service: PajamaxService;
+pub fn serve_with_config<S, A>(srv: S, addr: A, config: Config) -> std::io::Result<()>
+where
+    S: PajamaxService + Clone + Send + Sync + 'static,
+    A: ToSocketAddrs,
+{
+    let counter = Arc::new(AtomicUsize::new(0));
 
-    fn handle_call(
-        &mut self,
-        request: <Self::Service as PajamaxService>::Request,
-        stream_id: u32,
-        req_data_len: usize,
-    ) -> Result<(), std::io::Error>;
+    let listener = TcpListener::bind(addr)?;
+    for c in listener.incoming() {
+        if counter.load(Ordering::Relaxed) >= config.max_concurrent_connections {
+            continue;
+        }
+        counter.fetch_add(1, Ordering::Relaxed);
 
-    fn defer_flush(&mut self) -> Result<(), std::io::Error> {
-        Ok(())
+        let c = c?;
+        c.set_read_timeout(Some(config.idle_timeout))?;
+        c.set_write_timeout(Some(config.write_timeout))?;
+
+        let counter = counter.clone();
+        let srv = srv.clone();
+        thread::Builder::new()
+            .name(String::from("pajamax-w"))
+            .spawn(move || {
+                let _ = handle(srv, c, config);
+                counter.fetch_sub(1, Ordering::Relaxed);
+            })
+            .unwrap();
     }
+    unreachable!();
 }
 
-pub fn handle<S>(mut srv_conn: S, mut c: TcpStream, config: Config) -> Result<(), Error>
+pub fn handle<S>(mut srv: S, mut c: TcpStream, config: Config) -> Result<(), Error>
 where
-    S: ConnectionMode,
+    S: PajamaxService,
 {
     handshake(&mut c, &config)?;
 
+    // prepare some contexts
     let mut input = Vec::new();
     input.resize(config.max_frame_size, 0);
 
-    let mut streams: HashMap<u32, <S::Service as PajamaxService>::RequestDiscriminant> =
-        HashMap::new();
-    let mut hpack_decoder: Decoder<S::Service> = Decoder::new();
+    let mut streams: HashMap<u32, S::RequestDiscriminant> = HashMap::new();
+    let mut hpack_decoder: Decoder<S> = Decoder::new();
 
+    let c2 = Arc::new(Mutex::new(c.try_clone()?)); // output end
+    let mut resp_end = ResponseEnd::new(c2.clone(), &config);
+
+    let mut dispatch_ctx = DispatchCtx::<S>::new(c2, config);
+
+    // read and parse input data
     let mut last_end = 0;
     while let Ok(len) = c.read(&mut input[last_end..]) {
         if len == 0 {
@@ -69,10 +95,26 @@ where
                     };
 
                     // parse the request
-                    let request = S::Service::parse(req_disc, req_buf)?;
+                    let request = S::parse(req_disc, req_buf)?;
 
                     // call the method!
-                    srv_conn.handle_call(request, stream_id, frame.len)?;
+                    //handle_call(&mut srv, request, stream_id, frame.len, &mut resp_end)?;
+                    match srv.dispatch_to(&request) {
+                        Some(req_tx) => {
+                            if let Err(status) =
+                                dispatch_ctx.dispatch(req_tx, request, stream_id, frame.len)
+                            {
+                                resp_end.build::<S::Reply>(stream_id, Err(status), frame.len);
+                                resp_end.flush(false)?;
+                            }
+                        }
+                        None => {
+                            // handle the request directly
+                            let response = srv.call(request);
+                            resp_end.build(stream_id, response, frame.len);
+                            resp_end.flush(false)?;
+                        }
+                    }
                 }
                 FrameKind::Headers => {
                     let headers_buf = frame.process_headers()?;
@@ -87,7 +129,7 @@ where
             }
         }
 
-        srv_conn.defer_flush()?;
+        resp_end.flush(true)?;
 
         // for next loop
         if pos == 0 {
