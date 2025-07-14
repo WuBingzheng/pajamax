@@ -39,47 +39,21 @@ struct MyDictShard {
     dict: HashMap<String, f64>,
 }
 
-// This defines how to dispatch requests.
-//
-// There are 3 kinds of methods:
-//
-// 1. always be dispatched to backend. So these methods are need to be
-//    implemented in MyDictShard only but not in MyDictFront;
-//
-// 2. if dispatched is determined by request. So these methods are need
-//    to be implemented in MyDictShard and MyDictFront both;
-//
-// 3. always not be dispatched, and handled in front directly. So these
-//    methods are need to be implemented in MyDictFront only but not in
-//    MyDictShard.
-impl DictStoreDispatch for MyDictFront {
-    // Kind-1: These 3 methods are dispatched to some shard by item key.
-    fn set(&self, req: &Entry) -> Option<&DictStoreRequestTx> {
-        Some(self.pick_req_tx(&req.key))
-    }
-    fn get(&self, req: &Key) -> Option<&DictStoreRequestTx> {
-        Some(self.pick_req_tx(&req.key))
-    }
-    fn delete(&self, req: &Key) -> Option<&DictStoreRequestTx> {
-        Some(self.pick_req_tx(&req.key))
-    }
-
-    // Kind-2: This method is dispatched to some shard by shard number.
-    // If the shard number is invalid, this function
-    // will return `None`, so the request will not be dispatched
-    // and will be handled in front server directly.
-    fn list_shard(&self, req: &ListShardRequest) -> Option<&DictStoreRequestTx> {
-        self.req_txs.get(req.shard as usize)
-    }
-
-    // Kind-3: We do not implement `stats` method here. So it's always be
-    // handled in front server directly.
-}
-
 // Methods for front server.
 //
 // Here is no get/set/delete methods which are always handled in backend shard server.
 impl DictStore for MyDictFront {
+    // TODO add comments
+    fn dispatch_to(&self, req: &DictStoreRequest) -> Option<&DictStoreRequestTx> {
+        match req {
+            DictStoreRequest::Get(req) => Some(self.pick_req_tx(&req.key)),
+            DictStoreRequest::Set(req) => Some(self.pick_req_tx(&req.key)),
+            DictStoreRequest::Delete(req) => Some(self.pick_req_tx(&req.key)),
+            DictStoreRequest::ListShard(req) => self.req_txs.get(req.shard as usize),
+            _ => None,
+        }
+    }
+
     // global stats
     fn stats(&mut self, _req: EmptyRequest) -> Result<StatsReply, Status> {
         Ok(StatsReply {
@@ -195,5 +169,5 @@ fn main() {
     // start the server
     // By now we have not support configurations and multiple service,
     // so this API is simpler than tonic's.
-    pajamax::serve_dispatch(DictStoreServer::new(dict), addr).unwrap();
+    pajamax::serve(DictStoreServer::new(dict), addr).unwrap();
 }

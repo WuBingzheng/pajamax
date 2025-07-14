@@ -44,57 +44,41 @@
 use std::fmt::Write;
 use std::path::Path;
 
-/// Modes: Local and Dispatch.
-#[derive(Clone, Copy, PartialEq)]
-pub enum Mode {
-    Local,
-    Dispatch,
-}
-
-/// Generate service code for `pajamax` in `proto-build`.
-///
-/// See the module's document for usage.
-pub struct PajamaxGen {
-    pub mode: Mode,
-}
+struct PajamaxGen;
 
 impl prost_build::ServiceGenerator for PajamaxGen {
     fn generate(&mut self, service: prost_build::Service, buf: &mut String) {
-        gen_trait_service(&service, buf, self.mode);
+        gen_trait_service(&service, buf);
         gen_request(&service, buf);
         gen_reply(&service, buf);
         gen_server(&service, buf);
-
-        if self.mode == Mode::Dispatch {
-            gen_dispatch_channels(&service, buf);
-            gen_trait_service_dispatch(&service, buf);
-            gen_dispatch_server(&service, buf);
-        }
+        gen_dispatch_channels(&service, buf);
     }
 }
 
 // trait ${Service}
 //
 // This defines all gRPC methods.
-//
-// For Local mode, applications should implement this trait for its server context.
-//
-// For Dispatch mode, applications should implement this trait for front and
-// backend server contexts both. See module's ducument for details.
-fn gen_trait_service(service: &prost_build::Service, buf: &mut String, mode: Mode) {
-    let method_end = match mode {
-        Mode::Local => ";",
-        Mode::Dispatch => "{ unimplemented!(\"missing method in pajamax of dispatch-mode\"); }",
-    };
-
+fn gen_trait_service(service: &prost_build::Service, buf: &mut String) {
     writeln!(buf, "#[allow(unused_variables)]").unwrap();
     writeln!(buf, "pub trait {} {{", service.name).unwrap();
+
+    writeln!(
+        buf,
+        "fn dispatch_to(&self, req: &{}Request)
+             -> Option<&pajamax::dispatch::RequestTx<{}Request, {}Reply>>
+         {{ None }}",
+        service.name, service.name, service.name,
+    )
+    .unwrap();
 
     for m in service.methods.iter() {
         writeln!(
             buf,
-            "fn {}(&mut self, req: {}) -> pajamax::Response<{}> {}",
-            m.name, m.input_type, m.output_type, method_end
+            "fn {}(&mut self, req: {}) -> pajamax::Response<{}> {{
+                unimplemented!(\"missing method in pajamax\");
+            }}",
+            m.name, m.input_type, m.output_type
         )
         .unwrap();
     }
@@ -211,7 +195,7 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
     }
     writeln!(buf, "_ => None, }} }}").unwrap();
 
-    // - impl PajamaxService::call()
+    // - impl PajamaxService::parse()
     writeln!(
         buf,
         "fn parse(disc: Self::RequestDiscriminant, buf: &[u8]) -> Result<Self::Request, prost::DecodeError> {{
@@ -229,6 +213,15 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
         .unwrap();
     }
     writeln!(buf, "}} }}").unwrap();
+    // - impl PajamaxService::dispatch_to()
+    writeln!(
+        buf,
+        "fn dispatch_to(&self, req: &Self::Request) -> Option<&pajamax::dispatch::RequestTx<Self::Request, Self::Reply>> {{
+            self.inner.dispatch_to(req)
+        }}"
+    )
+    .unwrap();
+
     // - impl PajamaxService::call()
     writeln!(
         buf,
@@ -253,86 +246,19 @@ fn gen_dispatch_channels(service: &prost_build::Service, buf: &mut String) {
     writeln!(
         buf,
         "#[allow(dead_code)]
-         pub type {}RequestTx = pajamax::dispatch_server::RequestTx<{}Request, {}Reply>;
+         pub type {}RequestTx = pajamax::dispatch::RequestTx<{}Request, {}Reply>;
          #[allow(dead_code)]
-         pub type {}RequestRx = pajamax::dispatch_server::RequestRx<{}Request, {}Reply>;",
+         pub type {}RequestRx = pajamax::dispatch::RequestRx<{}Request, {}Reply>;",
         service.name, service.name, service.name, service.name, service.name, service.name
     )
     .unwrap();
 }
 
-// trait ${Service}Dispatch
-//
-// Application uses this to define how to dispatch requests.
-fn gen_trait_service_dispatch(service: &prost_build::Service, buf: &mut String) {
-    writeln!(buf, "#[allow(unused_variables)]").unwrap();
-    writeln!(buf, "pub trait {}Dispatch {{", service.name).unwrap();
-
-    for m in service.methods.iter() {
-        writeln!(
-            buf,
-            "fn {} (&self, req: &{}) -> Option<&{}RequestTx> {{ None }}",
-            m.name, m.input_type, service.name
-        )
-        .unwrap();
-    }
-    writeln!(buf, "}}").unwrap();
-}
-
-// impl PajamaxDispatchService for ${Service}
-//
-// Intermediary between pajamax::PajamaxDispatchService and application's dispatch-context.
-fn gen_dispatch_server(service: &prost_build::Service, buf: &mut String) {
-    writeln!(
-        buf,
-        "impl<T> pajamax::dispatch_server::PajamaxDispatchService for {}Server<T>
-         where T: {}Dispatch + {}
-         {{
-             fn dispatch_to(&self, request: &Self::Request) -> Option<&{}RequestTx> {{
-                 match request {{",
-        service.name, service.name, service.name, service.name
-    )
-    .unwrap();
-
-    for m in service.methods.iter() {
-        writeln!(
-            buf,
-            "{}Request::{}(req) => {}Dispatch::{}(&self.inner, req),",
-            service.name, m.proto_name, service.name, m.name
-        )
-        .unwrap();
-    }
-    writeln!(buf, "}} }} }}").unwrap();
-}
-
-fn compile_protos(
-    mode: Mode,
+pub fn compile_protos(
     protos: &[impl AsRef<Path>],
     includes: &[impl AsRef<Path>],
 ) -> std::io::Result<()> {
     prost_build::Config::new()
-        .service_generator(Box::new(PajamaxGen { mode }))
+        .service_generator(Box::new(PajamaxGen))
         .compile_protos(protos, includes)
-}
-
-/// Simple .proto compiling, in Local mode.
-///
-/// If you need more options, call the `prost_build::Config` directly
-/// with `.service_generator(Box::new(PajamaxGen{mode}))`.
-pub fn compile_protos_in_local(
-    protos: &[impl AsRef<Path>],
-    includes: &[impl AsRef<Path>],
-) -> std::io::Result<()> {
-    compile_protos(Mode::Local, protos, includes)
-}
-
-/// Simple .proto compiling, in Dispatch mode.
-///
-/// If you need more options, call the `prost_build::Config` directly
-/// with `.service_generator(Box::new(PajamaxGen{mode}))`.
-pub fn compile_protos_in_dispatch(
-    protos: &[impl AsRef<Path>],
-    includes: &[impl AsRef<Path>],
-) -> std::io::Result<()> {
-    compile_protos(Mode::Dispatch, protos, includes)
 }

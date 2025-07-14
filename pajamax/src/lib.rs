@@ -202,7 +202,7 @@ pub trait PajamaxService {
 
     fn dispatch_to(
         &self,
-        request: &Self::Request,
+        req: &Self::Request,
     ) -> Option<&crate::dispatch::RequestTx<Self::Request, Self::Reply>>;
 
     // call methods' handlers on the request, and return response
