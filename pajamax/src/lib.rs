@@ -207,6 +207,38 @@ pub trait PajamaxService {
 
     // call methods' handlers on the request, and return response
     fn call(&mut self, request: Self::Request) -> Response<Self::Reply>;
+
+    fn handle(
+        &mut self,
+        path: &str,
+        req_buf: &[u8],
+        stream_id: u32,
+        data_len: usize,
+        resp_end: &mut crate::response_end::ResponseEnd,
+    ) {
+        let req_disc = Self::route(path.as_bytes()).unwrap();
+        let request = Self::parse(req_disc, req_buf).unwrap();
+
+        // call the method!
+        //handle_call(&mut srv, request, stream_id, frame.len, &mut resp_end)?;
+        match self.dispatch_to(&request) {
+            Some(_req_tx) => {
+                todo!();
+                /*
+                if let Err(status) = dispatch_ctx.dispatch(req_tx, request, stream_id, data_len) {
+                    resp_end.build::<Self::Reply>(stream_id, Err(status), data_len);
+                    resp_end.flush(false)?;
+                }
+                */
+            }
+            None => {
+                // handle the request directly
+                let response = self.call(request);
+                resp_end.build(stream_id, response, data_len);
+                resp_end.flush(false).unwrap();
+            }
+        }
+    }
 }
 
 /// Start server with default configurations.

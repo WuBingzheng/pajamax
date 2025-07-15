@@ -121,14 +121,12 @@ impl Representation {
     }
 }
 
-use crate::PajamaxService;
-
-pub struct Decoder<S: PajamaxService> {
-    dynamic_table: Vec<Option<S::RequestDiscriminant>>,
-    huffman_paths: HashMap<Vec<u8>, S::RequestDiscriminant>,
+pub struct Decoder {
+    dynamic_table: Vec<Option<String>>,
+    huffman_paths: HashMap<Vec<u8>, String>,
 }
 
-impl<S: PajamaxService> Decoder<S> {
+impl Decoder {
     /// Creates a new `Decoder` with all settings set to default values.
     pub fn new() -> Self {
         Decoder {
@@ -137,7 +135,7 @@ impl<S: PajamaxService> Decoder<S> {
         }
     }
 
-    pub fn find_path(&mut self, mut buf: &[u8]) -> Result<S::RequestDiscriminant, Error> {
+    pub fn find_path(&mut self, mut buf: &[u8]) -> Result<String, Error> {
         use self::Representation::*;
 
         let mut find_path = Err(Error::NoPathSet);
@@ -157,8 +155,8 @@ impl<S: PajamaxService> Decoder<S> {
                         }
 
                         let index = 61 + table_len - index;
-                        if let Some(req_disc) = self.dynamic_table[index] {
-                            find_path = Ok(req_disc);
+                        if let Some(req_disc) = &self.dynamic_table[index] {
+                            find_path = Ok(req_disc.clone());
                         }
                     }
                     adv
@@ -172,7 +170,7 @@ impl<S: PajamaxService> Decoder<S> {
                             let path = path.to_plain(&mut tmp_decode_path_buf)?;
 
                             let req_disc = Self::route(path)?;
-                            find_path = Ok(req_disc);
+                            find_path = Ok(req_disc.clone());
                             Some(req_disc)
                         }
                         None => None,
@@ -193,7 +191,7 @@ impl<S: PajamaxService> Decoder<S> {
 
                             OutStr::Huffman(huff_path) => match self.huffman_paths.get(huff_path) {
                                 Some(req_disc) => {
-                                    find_path = Ok(*req_disc);
+                                    find_path = Ok(req_disc.clone());
                                 }
                                 None => {
                                     let mut path = Vec::with_capacity(32);
@@ -201,7 +199,8 @@ impl<S: PajamaxService> Decoder<S> {
 
                                     let req_disc = Self::route(&path)?;
 
-                                    self.huffman_paths.insert(huff_path.to_vec(), req_disc);
+                                    self.huffman_paths
+                                        .insert(huff_path.to_vec(), req_disc.clone());
 
                                     find_path = Ok(req_disc);
                                 }
@@ -221,10 +220,8 @@ impl<S: PajamaxService> Decoder<S> {
         find_path
     }
 
-    fn route(path: &[u8]) -> Result<S::RequestDiscriminant, Error> {
-        S::route(path).ok_or(Error::UnknownMethod(
-            String::from_utf8_lossy(path).to_string(),
-        ))
+    fn route(path: &[u8]) -> Result<String, Error> {
+        Ok(String::from_utf8_lossy(path).to_string())
     }
 }
 

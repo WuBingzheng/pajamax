@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::config::Config;
-use crate::dispatch::DispatchCtx;
+//use crate::dispatch::DispatchCtx;
 use crate::error::Error;
 use crate::hpack_decoder::Decoder;
 use crate::http2::*;
@@ -54,13 +54,13 @@ where
     let mut input = Vec::new();
     input.resize(config.max_frame_size, 0);
 
-    let mut streams: HashMap<u32, S::RequestDiscriminant> = HashMap::new();
-    let mut hpack_decoder: Decoder<S> = Decoder::new();
+    let mut streams: HashMap<u32, String> = HashMap::new();
+    let mut hpack_decoder: Decoder = Decoder::new();
 
     let c2 = Arc::new(Mutex::new(c.try_clone()?)); // output end
     let mut resp_end = ResponseEnd::new(c2.clone(), &config);
 
-    let mut dispatch_ctx = DispatchCtx::<S>::new(c2, config);
+    //let mut dispatch_ctx = DispatchCtx::<S>::new(c2, config);
 
     // read and parse input data
     let mut last_end = 0;
@@ -94,7 +94,16 @@ where
                         return Err(Error::InvalidHttp2("DATA frame without HEADERS"));
                     };
 
+                    srv.handle(
+                        &req_disc,
+                        req_buf,
+                        stream_id,
+                        frame.len as usize,
+                        &mut resp_end,
+                    );
+
                     // parse the request
+                    /*
                     let request = S::parse(req_disc, req_buf)?;
 
                     // call the method!
@@ -115,6 +124,7 @@ where
                             resp_end.flush(false)?;
                         }
                     }
+                    */
                 }
                 FrameKind::Headers => {
                     let headers_buf = frame.process_headers()?;
