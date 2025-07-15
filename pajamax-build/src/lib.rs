@@ -49,10 +49,10 @@ struct PajamaxGen;
 impl prost_build::ServiceGenerator for PajamaxGen {
     fn generate(&mut self, service: prost_build::Service, buf: &mut String) {
         gen_trait_service(&service, buf);
-        gen_request(&service, buf);
+        //gen_request(&service, buf);
         gen_reply(&service, buf);
         gen_server(&service, buf);
-        gen_dispatch_channels(&service, buf);
+        //gen_dispatch_channels(&service, buf);
     }
 }
 
@@ -63,6 +63,7 @@ fn gen_trait_service(service: &prost_build::Service, buf: &mut String) {
     writeln!(buf, "#[allow(unused_variables)]").unwrap();
     writeln!(buf, "pub trait {} {{", service.name).unwrap();
 
+    /*
     writeln!(
         buf,
         "fn dispatch_to(&self, req: &{}Request)
@@ -71,11 +72,12 @@ fn gen_trait_service(service: &prost_build::Service, buf: &mut String) {
         service.name, service.name, service.name,
     )
     .unwrap();
+    */
 
     for m in service.methods.iter() {
         writeln!(
             buf,
-            "fn {}(&mut self, req: {}) -> pajamax::Response<{}> {{
+            "fn {}(&self, req: {}) -> pajamax::Response<{}> {{
                 unimplemented!(\"missing method in pajamax\");
             }}",
             m.name, m.input_type, m.output_type
@@ -167,20 +169,23 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
         buf,
         "impl<T> pajamax::PajamaxService for {}Server<T>
         where T: {}
-        {{
-            type RequestDiscriminant = {}RequestDiscriminant;
-            type Request = {}Request;
-            type Reply = {}Reply;",
-        service.name, service.name, service.name, service.name, service.name
+        {{",
+        service.name, service.name
     )
     .unwrap();
 
     // - impl PajamaxService::route()
     writeln!(
         buf,
-        "fn route(
-            path: &[u8],
-        ) -> Option<Self::RequestDiscriminant> {{
+        "fn handle(
+            &self,
+            path: &str,
+            buf: &[u8],
+            stream_id: u32,
+            frame_len: usize,
+            resp_end: &mut pajamax::response_end::ResponseEnd,
+        ) {{
+            use prost::Message;
             match path {{"
     )
     .unwrap();
@@ -188,57 +193,23 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
     for m in service.methods.iter() {
         writeln!(
             buf,
-            "b\"/{}.{}/{}\" => Some(Self::RequestDiscriminant::{}),",
-            service.package, service.name, m.proto_name, m.proto_name
+            "\"/{}.{}/{}\" => {{
+                let request = {}::decode(buf).unwrap();
+                let response = self.inner.{}(request).map({}Reply::{});
+                resp_end.build(stream_id, response, frame_len);
+                resp_end.flush(false).unwrap();
+            }}",
+            service.package,
+            service.name,
+            m.proto_name,
+            m.input_type,
+            m.name,
+            service.name,
+            m.proto_name,
         )
         .unwrap();
     }
-    writeln!(buf, "_ => None, }} }}").unwrap();
-
-    // - impl PajamaxService::parse()
-    writeln!(
-        buf,
-        "fn parse(disc: Self::RequestDiscriminant, buf: &[u8]) -> Result<Self::Request, prost::DecodeError> {{
-            use prost::Message;
-            match disc {{"
-    )
-    .unwrap();
-
-    for m in service.methods.iter() {
-        writeln!(
-            buf,
-            "{}RequestDiscriminant::{} => {}::decode(buf).map(Self::Request::{}),",
-            service.name, m.proto_name, m.input_type, m.proto_name
-        )
-        .unwrap();
-    }
-    writeln!(buf, "}} }}").unwrap();
-    // - impl PajamaxService::dispatch_to()
-    writeln!(
-        buf,
-        "fn dispatch_to(&self, req: &Self::Request) -> Option<&pajamax::dispatch::RequestTx<Self::Request, Self::Reply>> {{
-            self.inner.dispatch_to(req)
-        }}"
-    )
-    .unwrap();
-
-    // - impl PajamaxService::call()
-    writeln!(
-        buf,
-        "fn call(&mut self, req: Self::Request) -> pajamax::Response<Self::Reply> {{
-            match req {{"
-    )
-    .unwrap();
-
-    for m in service.methods.iter() {
-        writeln!(
-            buf,
-            "{}Request::{}(req) => self.inner.{}(req).map({}Reply::{}),",
-            service.name, m.proto_name, m.name, service.name, m.proto_name
-        )
-        .unwrap();
-    }
-    writeln!(buf, "}} }} }}").unwrap();
+    writeln!(buf, "_=> todo!(), }} }} }}").unwrap();
 }
 
 // some alias

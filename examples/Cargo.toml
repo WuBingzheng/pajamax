@@ -8,9 +8,9 @@ name = "examples"
 name = "helloworld"
 path = "src/helloworld.rs"
 
-[[bin]]
-name = "dict_store"
-path = "src/dict_store.rs"
+#[[bin]]
+#name = "dict_store"
+#path = "src/dict_store.rs"
 
 [dependencies]
 pajamax = {version="*", path="../pajamax/"}
