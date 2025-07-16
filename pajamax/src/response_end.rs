@@ -33,12 +33,10 @@ impl ResponseEnd {
     }
 
     // build response to output buffer
-    pub fn build<Reply: http2::RespEncode>(
-        &mut self,
-        stream_id: u32,
-        response: Response<Reply>,
-        req_data_len: usize,
-    ) {
+    pub fn build<Reply>(&mut self, stream_id: u32, response: Response<Reply>, req_data_len: usize)
+    where
+        Reply: prost::Message,
+    {
         self.req_count += 1;
         self.req_data_len += req_data_len;
         match response {

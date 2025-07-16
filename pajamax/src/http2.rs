@@ -173,9 +173,9 @@ impl HeadFlags {
     }
 }
 
-pub fn build_response<Reply: RespEncode>(
+pub fn build_response(
     stream_id: u32,
-    reply: Reply,
+    reply: impl prost::Message,
     hpack_encoder: &mut Encoder,
     output: &mut Vec<u8>,
 ) {
@@ -288,7 +288,7 @@ fn build_u16(n: u16, buf: &mut [u8]) {
     buf.copy_from_slice(&tmp);
 }
 
-/// Used by `pajamax-build` crate.
-pub trait RespEncode {
-    fn encode(&self, output: &mut Vec<u8>) -> Result<(), prost::EncodeError>;
-}
+// Used by `pajamax-build` crate.
+// pub trait RespEncode {
+//     fn encode(&self, output: &mut Vec<u8>) -> Result<(), prost::EncodeError>;
+// }
