@@ -185,32 +185,6 @@ pub use http2::RespEncode;
 /// Wrapper of Result<Reply, Status>.
 pub type Response<Reply> = Result<Reply, status::Status>;
 
-/*
-/// Used by `pajamax-build` crate. It should implement this for service in .proto file.
-pub trait PajamaxService {
-    type Request;
-    type RequestDiscriminant: Clone + Copy;
-    type Reply: RespEncode + Send + Sync + 'static;
-
-    // call this to locate the gRPC method by `:path` header in HEADER frame
-    fn route(path: &[u8]) -> Option<Self::RequestDiscriminant>;
-
-    // call this to parse request in DATA frame
-    fn parse(
-        disc: Self::RequestDiscriminant,
-        buf: &[u8],
-    ) -> Result<Self::Request, prost::DecodeError>;
-
-    fn dispatch_to(
-        &self,
-        req: &Self::Request,
-    ) -> Option<&crate::dispatch::RequestTx<Self::Request, Self::Reply>>;
-
-    // call methods' handlers on the request, and return response
-    fn call(&mut self, request: Self::Request) -> Response<Self::Reply>;
-}
-*/
-
 pub trait PajamaxService {
     fn handle(
         &self,
@@ -220,13 +194,4 @@ pub trait PajamaxService {
         data_len: usize,
         resp_end: &mut crate::response_end::ResponseEnd,
     );
-}
-
-/// Start server with default configurations.
-pub fn serve<S, A>(srv: S, addr: A) -> std::io::Result<()>
-where
-    S: PajamaxService + Clone + Send + Sync + 'static,
-    A: std::net::ToSocketAddrs,
-{
-    connection::serve_with_config(srv, addr, Config::new())
 }

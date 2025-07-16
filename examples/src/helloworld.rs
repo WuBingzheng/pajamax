@@ -41,5 +41,8 @@ fn main() {
     // start the server
     // By now we have not support configurations and multiple service,
     // so this API is simpler than tonic's.
-    pajamax::serve(GreeterServer::new(greeter), addr).unwrap();
+    pajamax::Config::new()
+        .add_service(GreeterServer::new(greeter))
+        .serve(addr)
+        .unwrap();
 }

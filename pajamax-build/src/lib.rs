@@ -44,42 +44,50 @@
 use std::fmt::Write;
 use std::path::Path;
 
-struct PajamaxGen;
+pub struct PajamaxGen {
+    in_dispatch_mode: bool,
+}
 
-impl prost_build::ServiceGenerator for PajamaxGen {
-    fn generate(&mut self, service: prost_build::Service, buf: &mut String) {
-        gen_trait_service(&service, buf);
-        //gen_request(&service, buf);
-        gen_reply(&service, buf);
-        gen_server(&service, buf);
-        //gen_dispatch_channels(&service, buf);
+impl PajamaxGen {
+    pub fn new_local_mode() -> Self {
+        PajamaxGen {
+            in_dispatch_mode: false,
+        }
+    }
+    pub fn new_dispatch_mode() -> Self {
+        PajamaxGen {
+            in_dispatch_mode: true,
+        }
     }
 }
 
-// trait ${Service}
+impl prost_build::ServiceGenerator for PajamaxGen {
+    fn generate(&mut self, service: prost_build::Service, buf: &mut String) {
+        if self.in_dispatch_mode {
+            todo!();
+            //gen_trait_service(&service, buf);
+            //gen_request(&service, buf);
+            //gen_reply(&service, buf);
+            //gen_server(&service, buf);
+            //gen_dispatch_channels(&service, buf);
+        } else {
+            gen_trait_service(&service, buf);
+            gen_reply(&service, buf);
+            gen_server(&service, buf);
+        }
+    }
+}
+
+// trait ${Service}, for local mode
 //
 // This defines all gRPC methods.
 fn gen_trait_service(service: &prost_build::Service, buf: &mut String) {
-    writeln!(buf, "#[allow(unused_variables)]").unwrap();
     writeln!(buf, "pub trait {} {{", service.name).unwrap();
-
-    /*
-    writeln!(
-        buf,
-        "fn dispatch_to(&self, req: &{}Request)
-             -> Option<&pajamax::dispatch::RequestTx<{}Request, {}Reply>>
-         {{ None }}",
-        service.name, service.name, service.name,
-    )
-    .unwrap();
-    */
 
     for m in service.methods.iter() {
         writeln!(
             buf,
-            "fn {}(&self, req: {}) -> pajamax::Response<{}> {{
-                unimplemented!(\"missing method in pajamax\");
-            }}",
+            "fn {}(&self, req: {}) -> pajamax::Response<{}>;",
             m.name, m.input_type, m.output_type
         )
         .unwrap();
@@ -90,24 +98,24 @@ fn gen_trait_service(service: &prost_build::Service, buf: &mut String) {
 // enum ${Service}Request
 //
 // Used internally. Applications should not touch this.
-fn gen_request(service: &prost_build::Service, buf: &mut String) {
-    writeln!(buf, "#[derive(Debug, PartialEq)]").unwrap();
-    writeln!(buf, "pub enum {}Request {{", service.name).unwrap();
+// fn gen_request(service: &prost_build::Service, buf: &mut String) {
+//     writeln!(buf, "#[derive(Debug, PartialEq)]").unwrap();
+//     writeln!(buf, "pub enum {}Request {{", service.name).unwrap();
 
-    for m in service.methods.iter() {
-        writeln!(buf, "{}({}),", m.proto_name, m.input_type).unwrap();
-    }
-    writeln!(buf, "}}").unwrap();
+//     for m in service.methods.iter() {
+//         writeln!(buf, "{}({}),", m.proto_name, m.input_type).unwrap();
+//     }
+//     writeln!(buf, "}}").unwrap();
 
-    // RequestDiscriminant
-    writeln!(buf, "#[derive(Debug, PartialEq, Clone, Copy)]").unwrap();
-    writeln!(buf, "pub enum {}RequestDiscriminant {{", service.name).unwrap();
+//     // RequestDiscriminant
+//     writeln!(buf, "#[derive(Debug, PartialEq, Clone, Copy)]").unwrap();
+//     writeln!(buf, "pub enum {}RequestDiscriminant {{", service.name).unwrap();
 
-    for m in service.methods.iter() {
-        writeln!(buf, "{},", m.proto_name).unwrap();
-    }
-    writeln!(buf, "}}").unwrap();
-}
+//     for m in service.methods.iter() {
+//         writeln!(buf, "{},", m.proto_name).unwrap();
+//     }
+//     writeln!(buf, "}}").unwrap();
+// }
 
 // enum ${Service}Reply
 //
@@ -144,23 +152,14 @@ fn gen_reply(service: &prost_build::Service, buf: &mut String) {
 fn gen_server(service: &prost_build::Service, buf: &mut String) {
     writeln!(
         buf,
-        "pub struct {}Server<T: {}> {{
-            inner: T,
-        }}
-
-        impl<T: {} + std::clone::Clone> Clone for {}Server<T> {{
-            fn clone(&self) -> Self {{
-                Self {{ inner: self.inner.clone() }}
-            }}
-        }}
+        "pub struct {}Server<T: {}>(T);
 
         #[allow(dead_code)]
         impl<T: {}> {}Server<T> {{
-            pub fn new(inner: T) -> Self {{ Self {{ inner }} }}
-
-            pub fn get_inner(&self) -> &T {{ &self.inner }}
+            pub fn new(inner: T) -> Self {{ Self(inner) }}
+            pub fn get_inner(&self) -> &T {{ &self.0 }}
         }}",
-        service.name, service.name, service.name, service.name, service.name, service.name
+        service.name, service.name, service.name, service.name
     )
     .unwrap();
 
@@ -174,7 +173,7 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
     )
     .unwrap();
 
-    // - impl PajamaxService::route()
+    // - impl PajamaxService::handle()
     writeln!(
         buf,
         "fn handle(
@@ -194,8 +193,8 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
         writeln!(
             buf,
             "\"/{}.{}/{}\" => {{
-                let request = {}::decode(buf).unwrap();
-                let response = self.inner.{}(request).map({}Reply::{});
+                let request = {}::decode(buf).unwrap(); // TODO unwrap
+                let response = self.0.{}(request).map({}Reply::{});
                 resp_end.build(stream_id, response, frame_len);
                 resp_end.flush(false).unwrap();
             }}",
@@ -212,24 +211,33 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
     writeln!(buf, "_=> todo!(), }} }} }}").unwrap();
 }
 
-// some alias
-fn gen_dispatch_channels(service: &prost_build::Service, buf: &mut String) {
-    writeln!(
-        buf,
-        "#[allow(dead_code)]
-         pub type {}RequestTx = pajamax::dispatch::RequestTx<{}Request, {}Reply>;
-         #[allow(dead_code)]
-         pub type {}RequestRx = pajamax::dispatch::RequestRx<{}Request, {}Reply>;",
-        service.name, service.name, service.name, service.name, service.name, service.name
-    )
-    .unwrap();
-}
+// // some alias
+// fn gen_dispatch_channels(service: &prost_build::Service, buf: &mut String) {
+//     writeln!(
+//         buf,
+//         "#[allow(dead_code)]
+//          pub type {}RequestTx = pajamax::dispatch::RequestTx<{}Request, {}Reply>;
+//          #[allow(dead_code)]
+//          pub type {}RequestRx = pajamax::dispatch::RequestRx<{}Request, {}Reply>;",
+//         service.name, service.name, service.name, service.name, service.name, service.name
+//     )
+//     .unwrap();
+// }
 
-pub fn compile_protos(
+pub fn compile_protos_in_local(
     protos: &[impl AsRef<Path>],
     includes: &[impl AsRef<Path>],
 ) -> std::io::Result<()> {
     prost_build::Config::new()
-        .service_generator(Box::new(PajamaxGen))
+        .service_generator(Box::new(PajamaxGen::new_local_mode()))
+        .compile_protos(protos, includes)
+}
+
+pub fn compile_protos_in_dispatch(
+    protos: &[impl AsRef<Path>],
+    includes: &[impl AsRef<Path>],
+) -> std::io::Result<()> {
+    prost_build::Config::new()
+        .service_generator(Box::new(PajamaxGen::new_dispatch_mode()))
         .compile_protos(protos, includes)
 }

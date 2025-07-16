@@ -1,5 +1,30 @@
 use std::net::ToSocketAddrs;
+use std::sync::Arc;
 use std::time::Duration;
+
+use crate::PajamaxService;
+
+pub struct ConfigedServer {
+    pub(crate) config: Config,
+    pub(crate) services: Vec<Arc<dyn PajamaxService + Send + Sync + 'static>>,
+}
+
+impl ConfigedServer {
+    pub fn add_service<S>(mut self, svc: S) -> Self
+    where
+        S: crate::PajamaxService + Send + Sync + 'static,
+    {
+        self.services.push(Arc::new(svc));
+        self
+    }
+
+    pub fn serve<A>(self, addr: A) -> std::io::Result<()>
+    where
+        A: ToSocketAddrs,
+    {
+        crate::connection::serve_with_config(self.services, self.config, addr)
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Config {
@@ -91,11 +116,13 @@ impl Config {
         }
     }
 
-    pub fn serve<S, A>(self, srv: S, addr: A) -> std::io::Result<()>
+    pub fn add_service<S>(self, svc: S) -> ConfigedServer
     where
-        S: crate::PajamaxService + Clone + Send + Sync + 'static,
-        A: ToSocketAddrs,
+        S: crate::PajamaxService + Send + Sync + 'static,
     {
-        crate::connection::serve_with_config(srv, addr, self)
+        ConfigedServer {
+            config: self,
+            services: vec![Arc::new(svc)],
+        }
     }
 }
