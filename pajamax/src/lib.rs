@@ -186,9 +186,10 @@ pub use http2::RespEncode;
 pub type Response<Reply> = Result<Reply, status::Status>;
 
 pub trait PajamaxService {
+    fn route(&self, path: &[u8]) -> Option<usize>;
     fn handle(
         &self,
-        path: &str,
+        req_disc: usize,
         req_buf: &[u8],
         stream_id: u32,
         data_len: usize,

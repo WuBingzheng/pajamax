@@ -173,38 +173,50 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
     )
     .unwrap();
 
+    // - impl PajamaxService::route()
+    writeln!(
+        buf,
+        "fn route(&self, path: &[u8]) -> Option<usize> {{
+            match path {{"
+    )
+    .unwrap();
+
+    for (i, m) in service.methods.iter().enumerate() {
+        writeln!(
+            buf,
+            "b\"/{}.{}/{}\" => Some({}),",
+            service.package, service.name, m.proto_name, i
+        )
+        .unwrap();
+    }
+    writeln!(buf, "_ => None, }} }}").unwrap();
+
     // - impl PajamaxService::handle()
     writeln!(
         buf,
         "fn handle(
             &self,
-            path: &str,
-            buf: &[u8],
+            req_disc: usize,
+            req_buf: &[u8],
             stream_id: u32,
             frame_len: usize,
             resp_end: &mut pajamax::response_end::ResponseEnd,
         ) {{
             use prost::Message;
-            match path {{"
+            match req_disc {{"
     )
     .unwrap();
 
-    for m in service.methods.iter() {
+    for (i, m) in service.methods.iter().enumerate() {
         writeln!(
             buf,
-            "\"/{}.{}/{}\" => {{
-                let request = {}::decode(buf).unwrap(); // TODO unwrap
+            "{} => {{
+                let request = {}::decode(req_buf).unwrap(); // TODO unwrap
                 let response = self.0.{}(request).map({}Reply::{});
                 resp_end.build(stream_id, response, frame_len);
                 resp_end.flush(false).unwrap();
             }}",
-            service.package,
-            service.name,
-            m.proto_name,
-            m.input_type,
-            m.name,
-            service.name,
-            m.proto_name,
+            i, m.input_type, m.name, service.name, m.proto_name,
         )
         .unwrap();
     }

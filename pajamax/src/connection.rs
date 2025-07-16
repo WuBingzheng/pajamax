@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::io::Read;
 use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -8,7 +7,7 @@ use std::thread;
 use crate::config::Config;
 //use crate::dispatch::DispatchCtx;
 use crate::error::Error;
-use crate::hpack_decoder::Decoder;
+use crate::hpack_decoder::{Decoder, PathKind};
 use crate::http2::*;
 use crate::response_end::ResponseEnd;
 use crate::PajamaxService;
@@ -39,7 +38,10 @@ where
         thread::Builder::new()
             .name(String::from("pajamax-w"))
             .spawn(move || {
-                let _ = handle2(services, c, config);
+                match handle2(services, c, config) {
+                    Err(err) => println!("connection error: {:?}", err),
+                    Ok(_) => (),
+                }
                 concurrent.fetch_sub(1, Ordering::Relaxed);
             })
             .unwrap();
@@ -58,8 +60,10 @@ pub fn handle2(
     let mut input = Vec::new();
     input.resize(config.max_frame_size, 0);
 
-    let mut streams: HashMap<u32, String> = HashMap::new();
+    let mut last_in_header = None;
     let mut hpack_decoder: Decoder = Decoder::new();
+
+    let mut path_cache = Vec::new();
 
     let c2 = Arc::new(Mutex::new(c.try_clone()?)); // output end
     let mut resp_end = ResponseEnd::new(c2.clone(), &config);
@@ -77,11 +81,39 @@ pub fn handle2(
         while let Some(frame) = Frame::parse(&input[pos..end]) {
             pos += Frame::HEAD_SIZE + frame.len; // for next loop
 
+            //println!("get frame: {:?}", frame);
             match frame.kind {
+                FrameKind::Headers => {
+                    if last_in_header.is_some() {
+                        return Err(Error::InvalidHttp2("continoues HEADER frames"));
+                    }
+
+                    let headers_buf = frame.process_headers()?;
+
+                    let (isvc, req_disc) = match hpack_decoder.find_path(headers_buf)? {
+                        PathKind::Cached(cached) => path_cache[cached],
+                        PathKind::Plain(path) => {
+                            let len0 = path_cache.len();
+                            for (i, svc) in services.iter().enumerate() {
+                                if let Some(req_disc) = svc.route(&path) {
+                                    path_cache.push((i, req_disc));
+                                    break;
+                                }
+                            }
+                            if path_cache.len() == len0 {
+                                return Err(Error::UnknownMethod(
+                                    String::from_utf8_lossy(&path).into(),
+                                ));
+                            }
+                            path_cache[len0]
+                        }
+                    };
+                    last_in_header = Some((frame.stream_id, isvc, req_disc));
+                }
                 FrameKind::Data => {
                     let req_buf = frame.process_data()?;
 
-                    // grpc-level-protocal
+                    // unwrap grpc-level-protocal
                     if req_buf.len() == 0 {
                         continue;
                     }
@@ -90,28 +122,22 @@ pub fn handle2(
                     }
                     let req_buf = &req_buf[5..];
 
-                    // find the req-disc
-                    let stream_id = frame.stream_id;
-                    let Some(req_disc) = streams.remove(&stream_id) else {
-                        return Err(Error::InvalidHttp2("DATA frame without HEADERS"));
+                    // request
+                    let Some((stream_id, isvc, req_disc)) = last_in_header.take() else {
+                        return Err(Error::InvalidHttp2("DATA frame without HEADER"));
                     };
+                    if stream_id != frame.stream_id {
+                        return Err(Error::InvalidHttp2("DATA frame dismatch HEADER"));
+                    }
 
-                    services[0].handle(
-                        &req_disc,
+                    // path
+                    services[isvc].handle(
+                        req_disc,
                         req_buf,
                         stream_id,
                         frame.len as usize,
                         &mut resp_end,
                     );
-                }
-                FrameKind::Headers => {
-                    let headers_buf = frame.process_headers()?;
-
-                    let req_disc = hpack_decoder.find_path(headers_buf)?;
-
-                    if streams.insert(frame.stream_id, req_disc).is_some() {
-                        return Err(Error::InvalidHttp2("duplicated HEADERS frame"));
-                    }
                 }
                 _ => (),
             }

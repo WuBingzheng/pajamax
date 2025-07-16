@@ -121,21 +121,31 @@ impl Representation {
     }
 }
 
+pub enum PathKind {
+    Cached(usize),
+    Plain(Vec<u8>),
+}
+
 pub struct Decoder {
-    dynamic_table: Vec<Option<String>>,
-    huffman_paths: HashMap<Vec<u8>, String>,
+    next_cache_index: usize,
+    dynamic_table: Vec<Option<usize>>,
+
+    huffman_paths: HashMap<Vec<u8>, usize>,
+    plain_paths: HashMap<Vec<u8>, usize>,
 }
 
 impl Decoder {
     /// Creates a new `Decoder` with all settings set to default values.
     pub fn new() -> Self {
         Decoder {
+            next_cache_index: 0,
             dynamic_table: Vec::new(),
             huffman_paths: HashMap::new(),
+            plain_paths: HashMap::new(),
         }
     }
 
-    pub fn find_path(&mut self, mut buf: &[u8]) -> Result<String, Error> {
+    pub fn find_path(&mut self, mut buf: &[u8]) -> Result<PathKind, Error> {
         use self::Representation::*;
 
         let mut find_path = Err(Error::NoPathSet);
@@ -155,8 +165,8 @@ impl Decoder {
                         }
 
                         let index = 61 + table_len - index;
-                        if let Some(req_disc) = &self.dynamic_table[index] {
-                            find_path = Ok(req_disc.clone());
+                        if let Some(cached) = &self.dynamic_table[index] {
+                            find_path = Ok(PathKind::Cached(*cached));
                         }
                     }
                     adv
@@ -164,18 +174,25 @@ impl Decoder {
                 LiteralWithIndexing => {
                     let (path, adv) = decode_literal_path(buf, true)?;
 
-                    let opt_parse_fn = match path {
+                    let opt_index = match path {
                         Some(path) => {
-                            let mut tmp_decode_path_buf = Vec::new();
-                            let path = path.to_plain(&mut tmp_decode_path_buf)?;
+                            let path_buf = match path {
+                                OutStr::Plain(path) => path.to_vec(),
+                                OutStr::Huffman(huff_path) => {
+                                    let mut path_buf = Vec::with_capacity(32);
+                                    huffman::decode(huff_path, &mut path_buf)?;
+                                    path_buf
+                                }
+                            };
+                            find_path = Ok(PathKind::Plain(path_buf));
 
-                            let req_disc = Self::route(path)?;
-                            find_path = Ok(req_disc.clone());
-                            Some(req_disc)
+                            // the caller level should update the index too
+                            self.next_cache_index += 1;
+                            Some(self.next_cache_index - 1)
                         }
                         None => None,
                     };
-                    self.dynamic_table.push(opt_parse_fn);
+                    self.dynamic_table.push(opt_index);
 
                     adv
                 }
@@ -183,29 +200,30 @@ impl Decoder {
                     let (path, adv) = decode_literal_path(buf, false)?;
 
                     if let Some(path) = path {
-                        match path {
-                            OutStr::Plain(path) => {
-                                let req_disc = Self::route(path)?;
-                                find_path = Ok(req_disc);
-                            }
-
-                            OutStr::Huffman(huff_path) => match self.huffman_paths.get(huff_path) {
-                                Some(req_disc) => {
-                                    find_path = Ok(req_disc.clone());
-                                }
+                        find_path = Ok(match path {
+                            OutStr::Plain(path) => match self.plain_paths.get(path) {
+                                Some(cached) => PathKind::Cached(*cached),
                                 None => {
-                                    let mut path = Vec::with_capacity(32);
-                                    huffman::decode(huff_path, &mut path)?;
+                                    let cached = self.next_cache_index;
+                                    self.next_cache_index += 1;
+                                    self.plain_paths.insert(path.to_vec(), cached);
 
-                                    let req_disc = Self::route(&path)?;
-
-                                    self.huffman_paths
-                                        .insert(huff_path.to_vec(), req_disc.clone());
-
-                                    find_path = Ok(req_disc);
+                                    PathKind::Plain(path.to_vec())
                                 }
                             },
-                        }
+                            OutStr::Huffman(huff_path) => match self.huffman_paths.get(huff_path) {
+                                Some(cached) => PathKind::Cached(*cached),
+                                None => {
+                                    let cached = self.next_cache_index;
+                                    self.next_cache_index += 1;
+                                    self.huffman_paths.insert(huff_path.to_vec(), cached);
+
+                                    let mut plain = Vec::with_capacity(32);
+                                    huffman::decode(huff_path, &mut plain)?;
+                                    PathKind::Plain(plain)
+                                }
+                            },
+                        });
                     }
                     adv
                 }
@@ -218,10 +236,6 @@ impl Decoder {
         }
 
         find_path
-    }
-
-    fn route(path: &[u8]) -> Result<String, Error> {
-        Ok(String::from_utf8_lossy(path).to_string())
     }
 }
 
@@ -241,16 +255,6 @@ impl<'a> OutStr<'a> {
                 let mut huffbuf = Vec::with_capacity(s.len());
                 huffman::encode(s.as_bytes(), &mut huffbuf);
                 out == &huffbuf
-            }
-        }
-    }
-
-    fn to_plain(&'a self, tmp_buf: &'a mut Vec<u8>) -> Result<&'a [u8], Error> {
-        match self {
-            OutStr::Plain(plain) => Ok(plain),
-            OutStr::Huffman(huff) => {
-                huffman::decode(huff, tmp_buf)?;
-                Ok(tmp_buf)
             }
         }
     }
