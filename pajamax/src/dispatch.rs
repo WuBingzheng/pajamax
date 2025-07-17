@@ -13,10 +13,10 @@ use crate::Response;
 //use crate::{PajamaxService, RespEncode};
 
 /// Send end of request channel for dispatch mode.
-pub type RequestTx<Req, Reply> = mpsc::SyncSender<DispatchRequest<Req, Reply>>;
+pub type RequestTx<Req> = mpsc::SyncSender<DispatchRequest<Req>>;
 
 /// Receive end of request channel for dispatch mode.
-pub type RequestRx<Req, Reply> = mpsc::Receiver<DispatchRequest<Req, Reply>>;
+pub type RequestRx<Req> = mpsc::Receiver<DispatchRequest<Req>>;
 
 /// Send end of response channel for dispatch mode.
 type ResponseTx = mpsc::SyncSender<DispatchResponse>;
@@ -24,50 +24,70 @@ type ResponseTx = mpsc::SyncSender<DispatchResponse>;
 /// Receive end of response channel for dispatch mode.
 type ResponseRx = mpsc::Receiver<DispatchResponse>;
 
-pub enum DispatchResult<Req, Reply> {
-    Dispatch(RequestTx<Req>),
+pub enum DispatchResult<'a, Req, Reply> {
+    Dispatch(&'a RequestTx<Req>),
     Local(Response<Reply>),
 }
 
 /// Dispatched request in dispatch mode.
 pub struct DispatchRequest<Req> {
-    stream_id: u32,
-    req_data_len: usize,
-    request: Req,
-    resp_tx: ResponseTx,
+    pub stream_id: u32,
+    pub req_data_len: usize,
+    pub request: Req,
+    pub resp_tx: ResponseTx,
 }
 
 /// Dispatched response in dispatch mode.
-struct DispatchResponse {
-    stream_id: u32,
-    req_data_len: usize,
-    response: Box<dyn prost::Message>,
+pub struct DispatchResponse {
+    pub stream_id: u32,
+    pub req_data_len: usize,
+    pub response: Response<Box<dyn crate::http2::RespEncode>>,
+    //pub response: Response<Box<dyn prost::Message>>,
+    //response: Response<Box<dyn FnOnce(&mut Vec<u8>) + Send>>,
 }
 
-impl<Req> DispatchRequest<Req> {
-    // handle the request
-    // call its method and send it back to response channel
-    pub fn handle<S>(self, ctx: &mut S)
-    where
-        S: PajamaxDispatchShard,
-    {
-        let Self {
-            request,
-            stream_id,
-            req_data_len,
-            resp_tx,
-        } = self;
+// impl<Req> DispatchRequest<Req> {
+//     // handle the request
+//     // call its method and send it back to response channel
+//     pub fn handle<S>(self, ctx: &mut S)
+//     where
+//         S: PajamaxDispatchShard,
+//     {
+//         let Self {
+//             request,
+//             stream_id,
+//             req_data_len,
+//             resp_tx,
+//         } = self;
 
-        let response = ctx.call(request);
+//         let response = ctx.call(request);
 
-        let resp = DispatchResponse {
-            stream_id,
-            req_data_len,
-            response,
-        };
+//         let resp = DispatchResponse {
+//             stream_id,
+//             req_data_len,
+//             response,
+//         };
 
-        let _ = resp_tx.send(resp);
-    }
+//         let _ = resp_tx.send(resp);
+//     }
+// }
+
+use std::cell::RefCell;
+thread_local! {
+    static RESP_TX: RefCell<Option<ResponseTx>> = RefCell::new(None);
+}
+
+pub fn get_resp_tx(resp_end: &ResponseEnd) -> ResponseTx {
+    RESP_TX.with_borrow_mut(|cell| match cell {
+        None => {
+            let c = resp_end.c.clone();
+            let config = Config::new();
+            let resp_tx = new_response_routine(c, &config);
+            *cell = Some(resp_tx.clone());
+            resp_tx
+        }
+        Some(resp_tx) => resp_tx.clone(),
+    })
 }
 
 pub fn new_response_routine(c: Arc<Mutex<TcpStream>>, config: &Config) -> ResponseTx {
@@ -83,18 +103,18 @@ pub fn new_response_routine(c: Arc<Mutex<TcpStream>>, config: &Config) -> Respon
     resp_tx
 }
 
-pub fn dispatch<Req, Reply>(
-    req_tx: &RequestTx<Req, Reply>,
+pub fn dispatch<Req>(
+    req_tx: &RequestTx<Req>,
     request: Req,
     stream_id: u32,
     req_data_len: usize,
-    resp_tx: ResponseTx,
+    resp_end: &mut ResponseEnd,
 ) -> Response<()> {
     let disp_req = DispatchRequest {
         request,
         stream_id,
         req_data_len,
-        resp_tx,
+        resp_tx: get_resp_tx(resp_end),
     };
 
     req_tx.try_send(disp_req).map_err(|err| match err {
@@ -121,7 +141,7 @@ fn response_routine(mut resp_end: ResponseEnd, resp_rx: ResponseRx) -> Result<()
             }
         };
 
-        resp_end.build(resp.stream_id, resp.response, resp.req_data_len);
+        resp_end.build2(resp.stream_id, resp.response, resp.req_data_len);
         resp_end.flush(false)?;
     }
 

@@ -24,9 +24,8 @@ mod dict_store {
 // The instance of this struct is not global. Each connection has
 // its own instance. So it need implement `Clone`, and we use `Arc`
 // to swap the channel list.
-#[derive(Clone)]
 struct MyDictFront {
-    req_txs: Arc<Vec<DictStoreRequestTx>>,
+    req_txs: Vec<DictStoreRequestTx>,
 }
 
 // This is the backend server.
@@ -43,37 +42,36 @@ struct MyDictShard {
 //
 // Here is no get/set/delete methods which are always handled in backend shard server.
 impl DictStore for MyDictFront {
-    // TODO add comments
-    fn dispatch_to(&self, req: &DictStoreRequest) -> Option<&DictStoreRequestTx> {
-        match req {
-            DictStoreRequest::Get(req) => Some(self.pick_req_tx(&req.key)),
-            DictStoreRequest::Set(req) => Some(self.pick_req_tx(&req.key)),
-            DictStoreRequest::Delete(req) => Some(self.pick_req_tx(&req.key)),
-            DictStoreRequest::ListShard(req) => self.req_txs.get(req.shard as usize),
-            _ => None,
-        }
+    fn set(&self, req: &Entry) -> DictStoreDispatchResult<SetReply> {
+        pajamax::dispatch::DispatchResult::Dispatch(self.pick_req_tx(&req.key))
     }
 
-    // global stats
-    fn stats(&mut self, _req: EmptyRequest) -> Result<StatsReply, Status> {
-        Ok(StatsReply {
-            count: TOTAL_COUNT.load(Ordering::Relaxed) as u32,
-        })
+    fn get(&self, req: &Key) -> DictStoreDispatchResult<Value> {
+        pajamax::dispatch::DispatchResult::Dispatch(self.pick_req_tx(&req.key))
     }
 
-    // handle this request if invalid shard number
-    fn list_shard(&mut self, req: ListShardRequest) -> Result<ListShardReply, Status> {
-        Err(Status {
+    fn delete(&self, req: &Key) -> DictStoreDispatchResult<Value> {
+        pajamax::dispatch::DispatchResult::Dispatch(self.pick_req_tx(&req.key))
+    }
+
+    fn list_shard(&self, req: &ListShardRequest) -> DictStoreDispatchResult<ListShardReply> {
+        pajamax::dispatch::DispatchResult::Local(Err(Status {
             code: Code::InvalidArgument,
             message: format!("invalid shard: {}", req.shard),
-        })
+        }))
+    }
+
+    fn stats(&self, req: &EmptyRequest) -> DictStoreDispatchResult<StatsReply> {
+        pajamax::dispatch::DispatchResult::Local(Ok(StatsReply {
+            count: TOTAL_COUNT.load(Ordering::Relaxed) as u32,
+        }))
     }
 }
 
 // Methods for backend server.
 //
 // Here is no stats methods which is always handled in front server.
-impl DictStore for MyDictShard {
+impl DictStoreShard for MyDictShard {
     fn set(&mut self, req: Entry) -> Result<SetReply, Status> {
         let old_value = self.dict.insert(req.key, req.value);
         if old_value.is_none() {
@@ -143,10 +141,11 @@ fn shard_routine(req_rx: DictStoreRequestRx) {
     let shard = MyDictShard {
         dict: HashMap::new(),
     };
-    let mut shard = DictStoreServer::new(shard);
+    let mut shard = DictStoreShardServer::new(shard);
 
     while let Ok(req) = req_rx.recv() {
-        req.handle(&mut shard);
+        shard.call(req);
+        //req.handle(&mut shard);
     }
 }
 
@@ -160,14 +159,15 @@ fn main() {
     }
 
     let addr = "127.0.0.1:50051";
-    let dict = MyDictFront {
-        req_txs: Arc::new(req_txs),
-    };
+    let dict = MyDictFront { req_txs };
 
     println!("DictStoreServer listening on {}", addr);
 
     // start the server
     // By now we have not support configurations and multiple service,
     // so this API is simpler than tonic's.
-    pajamax::serve(DictStoreServer::new(dict), addr).unwrap();
+    pajamax::Config::new()
+        .add_service(DictStoreServer::new(dict))
+        .serve(addr)
+        .unwrap();
 }

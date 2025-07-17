@@ -67,6 +67,14 @@ impl prost_build::ServiceGenerator for PajamaxGen {
             gen_trait_service_dispatch_mode(&service, buf);
             gen_request(&service, buf);
             gen_dispatch_channels(&service, buf);
+            gen_server_shard(&service, buf);
+
+            writeln!(
+                buf,
+                "pub type {}DispatchResult<'a, R> = pajamax::dispatch::DispatchResult<'a, {}Request, R>;",
+                service.name, service.name
+            )
+            .unwrap();
         } else {
             gen_trait_service(&service, buf);
         }
@@ -94,12 +102,12 @@ fn gen_trait_service(service: &prost_build::Service, buf: &mut String) {
 }
 
 fn gen_trait_service_dispatch_mode(service: &prost_build::Service, buf: &mut String) {
-    writeln!(buf, "pub trait {}Dispatch {{", service.name).unwrap();
+    writeln!(buf, "pub trait {} {{", service.name).unwrap();
 
     for m in service.methods.iter() {
         writeln!(
             buf,
-            "fn {}(&self, req: {}) -> pajamax::dispatch::DispatchResult<{}Request, {}>;",
+            "fn {}(&self, req: &{}) -> {}DispatchResult<{}>;",
             m.name, m.input_type, service.name, m.output_type
         )
         .unwrap();
@@ -224,6 +232,93 @@ fn gen_server(service: &prost_build::Service, buf: &mut String, in_dispatch_mode
     writeln!(buf, "_ => None, }} }} }}").unwrap();
 }
 
+fn gen_server_shard(service: &prost_build::Service, buf: &mut String) {
+    writeln!(
+        buf,
+        "pub struct {}ShardServer<T: {}Shard>(T);
+
+        #[allow(dead_code)]
+        impl<T: {}Shard> {}ShardServer<T> {{
+            pub fn new(inner: T) -> Self {{ Self(inner) }}
+            pub fn get_inner(&self) -> &T {{ &self.0 }}
+        }}",
+        service.name, service.name, service.name, service.name
+    )
+    .unwrap();
+
+    for m in service.methods.iter() {
+        writeln!(
+            buf,
+            "struct {}{}Reply({});
+            impl pajamax::RespEncode for {}{}Reply {{
+                fn encode(&self, output: &mut Vec<u8>) -> Result<(), prost::EncodeError> {{
+                use prost::Message;
+                    self.0.encode(output)
+                }}
+            }}",
+            service.name, m.proto_name, m.output_type, service.name, m.proto_name
+        )
+        .unwrap();
+    }
+
+    // impl pajamax::PajamaxService for ${Service}
+    writeln!(
+        buf,
+        "impl<T: {}Shard> {}ShardServer<T> {{",
+        service.name, service.name
+    )
+    .unwrap();
+
+    // - impl PajamaxService::route()
+    writeln!(
+        buf,
+        "pub fn call(&mut self, disp_req: pajamax::dispatch::DispatchRequest<{}Request>) {{ // TODO fail?
+            use prost::Message;
+            let _response = match disp_req.request {{",
+        service.name,
+    )
+    .unwrap();
+
+    for m in service.methods.iter() {
+        writeln!(
+            buf,
+            "{}Request::{}(request) => {{
+                let response = self.0.{}(request).map(|reply|
+                    Box::new({}{}Reply(reply)) as Box<dyn pajamax::RespEncode>);
+                    //Box::new(move |output| reply.encode(output).unwrap()) as Box<dyn FnOnce(&mut Vec<u8>) + Send>);
+                    //Box::new(reply) as Box<dyn pajamax::http2::RespEncode>);
+                    //Box::new(reply) as Box<dyn prost::Message>);
+
+        let disp_resp = pajamax::dispatch::DispatchResponse {{
+             stream_id: disp_req.stream_id,
+             req_data_len: disp_req.req_data_len,
+             response,
+         }};
+
+        let _ = disp_req.resp_tx.send(disp_resp);
+            }}",
+            service.name, m.proto_name, m.name, service.name, m.proto_name
+        )
+        .unwrap();
+    }
+    writeln!(buf, "}};").unwrap();
+    // writeln!(
+    //     buf,
+    //     "let disp_resp = pajamax::dispatch::DispatchResponse {{
+    //          stream_id: disp_req.stream_id,
+    //          req_data_len: disp_req.req_data_len,
+    //          response,
+    //      }};
+
+    //     let _ = disp_req.resp_tx.send(disp_resp);
+    //     }}
+    //     }}
+    //     "
+    // )
+    // .unwrap();
+    writeln!(buf, "}} }}").unwrap();
+}
+
 // - impl PajamaxService::handle()
 fn gen_handle_in_local_mode(service: &prost_build::Service, buf: &mut String) {
     writeln!(
@@ -247,11 +342,10 @@ fn gen_handle_in_local_mode(service: &prost_build::Service, buf: &mut String) {
             "{} => {{
                 let request = {}::decode(req_buf).unwrap(); // TODO unwrap
                 let response = self.0.{}(request);
-                //let response = self.0.{{}}(request).map({}Reply::{});
                 resp_end.build(stream_id, response, frame_len);
                 resp_end.flush(false).unwrap();
             }}",
-            i, m.input_type, m.name, service.name, m.proto_name,
+            i, m.input_type, m.name
         )
         .unwrap();
     }
@@ -281,16 +375,16 @@ fn gen_handle_in_dispatch_mode(service: &prost_build::Service, buf: &mut String)
             "{} => {{
                 let request = {}::decode(req_buf).unwrap(); // TODO unwrap
                 match self.0.{}(&request) {{
-                    Dispatch(req_tx) => {{
-                        dispatch(req_tx, {}Request::{}(request), stream_id, frame_len);
+                    pajamax::dispatch::DispatchResult::Dispatch(req_tx) => {{
+                        pajamax::dispatch::dispatch(req_tx, {}Request::{}(request), stream_id, frame_len, resp_end);
                     }}
-                    Local(reply) => {{
-                        resp_end.build(stream_id, {}Reply::{}(reply), frame_len);
+                    pajamax::dispatch::DispatchResult::Local(reply) => {{
+                        resp_end.build(stream_id, reply, frame_len);
                         resp_end.flush(false).unwrap();
                     }}
                 }}
             }}",
-            i, m.input_type, m.name, service.name, m.proto_name, service.name, m.proto_name
+            i, m.input_type, m.name, service.name, m.proto_name
         )
         .unwrap();
     }
@@ -302,10 +396,10 @@ fn gen_dispatch_channels(service: &prost_build::Service, buf: &mut String) {
     writeln!(
         buf,
         "#[allow(dead_code)]
-         pub type {}RequestTx = pajamax::dispatch::RequestTx<{}Request, {}Reply>;
+         pub type {}RequestTx = pajamax::dispatch::RequestTx<{}Request>;
          #[allow(dead_code)]
-         pub type {}RequestRx = pajamax::dispatch::RequestRx<{}Request, {}Reply>;",
-        service.name, service.name, service.name, service.name, service.name, service.name
+         pub type {}RequestRx = pajamax::dispatch::RequestRx<{}Request>;",
+        service.name, service.name, service.name, service.name
     )
     .unwrap();
 }

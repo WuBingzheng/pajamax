@@ -8,7 +8,7 @@ use crate::http2;
 use crate::Response;
 
 pub struct ResponseEnd {
-    c: Arc<Mutex<TcpStream>>,
+    pub c: Arc<Mutex<TcpStream>>, // TODO pub
     req_count: usize,
     req_data_len: usize,
     hpack_encoder: Encoder,
@@ -42,6 +42,29 @@ impl ResponseEnd {
         match response {
             Ok(reply) => {
                 http2::build_response(stream_id, reply, &mut self.hpack_encoder, &mut self.output);
+            }
+            Err(status) => {
+                http2::build_status(stream_id, status, &mut self.hpack_encoder, &mut self.output);
+            }
+        }
+
+        // TODO call flush() here
+    }
+
+    // build response to output buffer
+    pub fn build2(
+        &mut self,
+        stream_id: u32,
+        //response: Response<Box<dyn FnOnce(&mut Vec<u8>) + Send>>,
+        response: Response<Box<dyn crate::http2::RespEncode>>,
+        //response: Response<Box<dyn prost::Message>>,
+        req_data_len: usize,
+    ) {
+        self.req_count += 1;
+        self.req_data_len += req_data_len;
+        match response {
+            Ok(reply) => {
+                http2::build_response2(stream_id, reply, &mut self.hpack_encoder, &mut self.output);
             }
             Err(status) => {
                 http2::build_status(stream_id, status, &mut self.hpack_encoder, &mut self.output);

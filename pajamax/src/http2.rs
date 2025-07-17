@@ -232,6 +232,68 @@ pub fn build_response(
     );
 }
 
+pub fn build_response2(
+    stream_id: u32,
+    //reply_fn: Box<dyn FnOnce(&mut Vec<u8>) + Send>,
+    reply: Box<dyn RespEncode>,
+    //reply: Box<dyn prost::Message>,
+    hpack_encoder: &mut Encoder,
+    output: &mut Vec<u8>,
+) {
+    // HEADERS
+    let start = output.len();
+    output.resize(start + Frame::HEAD_SIZE, 0);
+    hpack_encoder.encode_status_200(output);
+    hpack_encoder.encode_content_type(output);
+
+    Frame::build_head(
+        output.len() - start - Frame::HEAD_SIZE,
+        FrameKind::Headers,
+        HeadFlags::END_HEADERS,
+        stream_id,
+        &mut output[start..],
+    );
+
+    // DATA
+    let data_start = output.len();
+    let payload_start = data_start + Frame::HEAD_SIZE;
+    let msg_start = payload_start + 5;
+    output.resize(msg_start, 0);
+
+    //reply_fn(output);
+    reply.encode(output).unwrap();
+
+    let msg_len = output.len() - msg_start;
+    let payload_len = msg_len + 5;
+
+    Frame::build_head(
+        payload_len,
+        FrameKind::Data,
+        0,
+        stream_id,
+        &mut output[data_start..],
+    );
+
+    build_u32(
+        msg_len as u32,
+        &mut output[payload_start + 1..payload_start + 5],
+    );
+
+    // HEADERS
+    // TODO: check `TE: trailer` in request headers
+    let start = output.len();
+    output.resize(start + Frame::HEAD_SIZE, 0);
+    hpack_encoder.encode_grpc_status_zero(output);
+
+    Frame::build_head(
+        output.len() - start - Frame::HEAD_SIZE,
+        FrameKind::Headers,
+        HeadFlags::END_HEADERS | HeadFlags::END_STREAM,
+        stream_id,
+        &mut output[start..],
+    );
+}
+
 pub fn build_status(
     stream_id: u32,
     status: Status,
@@ -249,7 +311,8 @@ pub fn build_status(
     Frame::build_head(
         output.len() - start - Frame::HEAD_SIZE,
         FrameKind::Headers,
-        HeadFlags::END_HEADERS,
+        //HeadFlags::END_HEADERS,
+        HeadFlags::END_HEADERS | HeadFlags::END_STREAM,
         stream_id,
         &mut output[start..],
     );
@@ -289,6 +352,6 @@ fn build_u16(n: u16, buf: &mut [u8]) {
 }
 
 // Used by `pajamax-build` crate.
-// pub trait RespEncode {
-//     fn encode(&self, output: &mut Vec<u8>) -> Result<(), prost::EncodeError>;
-// }
+pub trait RespEncode: Send {
+    fn encode(&self, output: &mut Vec<u8>) -> Result<(), prost::EncodeError>;
+}
