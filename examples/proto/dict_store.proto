@@ -7,8 +7,10 @@ service DictStore {
     rpc Delete (Key) returns (Value);
 
     rpc ListShard (ListShardRequest) returns (ListShardReply);
+}
 
-    rpc Stats (EmptyRequest) returns (StatsReply); // global stats
+service Global {
+    rpc Stats (EmptyRequest) returns (StatsReply);
 }
 
 message Key {

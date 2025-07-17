@@ -54,11 +54,7 @@ impl DictStoreDispatch for MyDictFront {
         self.pick_req_tx(&req.key)
     }
 
-    fn list_shard(&self, req: &ListShardRequest) -> &DictStoreRequestTx {
-        todo!()
-    }
-
-    fn stats(&self, req: &EmptyRequest) -> &DictStoreRequestTx {
+    fn list_shard(&self, _: &ListShardRequest) -> &DictStoreRequestTx {
         todo!()
     }
 }
@@ -108,9 +104,6 @@ impl DictStoreShard for MyDictShard {
                 })
                 .collect(),
         })
-    }
-    fn stats(&mut self, _req: EmptyRequest) -> Result<StatsReply, Status> {
-        todo!()
     }
 }
 

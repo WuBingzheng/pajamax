@@ -168,15 +168,15 @@
 
 mod config;
 mod connection;
-mod error;
 mod hpack_decoder;
 mod hpack_encoder;
 mod http2;
 mod huffman;
 mod macros;
-pub mod response_end;
 
 pub mod dispatch;
+pub mod error;
+pub mod response_end;
 pub mod status;
 
 pub use config::Config;
@@ -185,8 +185,22 @@ pub use http2::ReplyEncode;
 /// Wrapper of Result<Reply, Status>.
 pub type Response<Reply> = Result<Reply, status::Status>;
 
+/// Used by pajamax-build crate.
 pub trait PajamaxService {
+    // Route the path to request enum discriminant as usize.
+    // It does not return the request enum itself because
+    // of multiple services have different requests.
     fn route(&self, path: &[u8]) -> Option<usize>;
+
+    // Handle the request:
+    // 1. parse the request from req_disc(from route()) and req_buf,
+    // 2. call the method defined in applications and make reply,
+    // 3. response the reply to resp_end.
+    //
+    // We merge these steps into one function because it's difficult
+    // to abstract exactly same routine for both local-mode and
+    // dispatch-mode. So we move the implemention to pajamax-build
+    // crate.
     fn handle(
         &self,
         req_disc: usize,
@@ -194,5 +208,7 @@ pub trait PajamaxService {
         stream_id: u32,
         data_len: usize,
         resp_end: &mut crate::response_end::ResponseEnd,
-    );
+    ) -> Result<(), error::Error>;
+
+    fn is_dispatch_mode(&self) -> bool;
 }

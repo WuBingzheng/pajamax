@@ -46,29 +46,30 @@ use std::path::Path;
 mod dispatch_mode;
 mod local_mode;
 
-pub struct PajamaxGen {
-    in_local_mode: bool,
-}
-
-impl PajamaxGen {
-    pub fn new_local_mode() -> Self {
-        PajamaxGen {
-            in_local_mode: true,
-        }
-    }
-    pub fn new_dispatch_mode() -> Self {
-        PajamaxGen {
-            in_local_mode: false,
-        }
-    }
+pub enum PajamaxGen {
+    Local,
+    Dispatch,
+    List {
+        local_svcs: Vec<&'static str>,
+        dispatch_svcs: Vec<&'static str>,
+    },
 }
 
 impl prost_build::ServiceGenerator for PajamaxGen {
     fn generate(&mut self, service: prost_build::Service, buf: &mut String) {
-        if self.in_local_mode {
-            local_mode::generate(service, buf);
-        } else {
-            dispatch_mode::generate(service, buf);
+        match self {
+            PajamaxGen::Local => local_mode::generate(service, buf),
+            PajamaxGen::Dispatch => dispatch_mode::generate(service, buf),
+            PajamaxGen::List {
+                local_svcs,
+                dispatch_svcs,
+            } => {
+                if local_svcs.contains(&service.name.as_str()) {
+                    local_mode::generate(service, buf);
+                } else if dispatch_svcs.contains(&service.name.as_str()) {
+                    dispatch_mode::generate(service, buf);
+                }
+            }
         }
     }
 }
@@ -78,7 +79,7 @@ pub fn compile_protos_in_local(
     includes: &[impl AsRef<Path>],
 ) -> std::io::Result<()> {
     prost_build::Config::new()
-        .service_generator(Box::new(PajamaxGen::new_local_mode()))
+        .service_generator(Box::new(PajamaxGen::Local))
         .compile_protos(protos, includes)
 }
 
@@ -87,6 +88,20 @@ pub fn compile_protos_in_dispatch(
     includes: &[impl AsRef<Path>],
 ) -> std::io::Result<()> {
     prost_build::Config::new()
-        .service_generator(Box::new(PajamaxGen::new_dispatch_mode()))
+        .service_generator(Box::new(PajamaxGen::Dispatch))
+        .compile_protos(protos, includes)
+}
+
+pub fn compile_protos_list(
+    protos: &[impl AsRef<Path>],
+    includes: &[impl AsRef<Path>],
+    local_svcs: Vec<&'static str>,
+    dispatch_svcs: Vec<&'static str>,
+) -> std::io::Result<()> {
+    prost_build::Config::new()
+        .service_generator(Box::new(PajamaxGen::List {
+            local_svcs,
+            dispatch_svcs,
+        }))
         .compile_protos(protos, includes)
 }

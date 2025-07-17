@@ -33,55 +33,71 @@ impl ResponseEnd {
     }
 
     // build response to output buffer
-    pub fn build<Reply>(&mut self, stream_id: u32, response: Response<Reply>, req_data_len: usize)
+    pub fn build<Reply>(
+        &mut self,
+        stream_id: u32,
+        response: Response<Reply>,
+        req_data_len: usize,
+    ) -> Result<(), std::io::Error>
     where
         Reply: prost::Message,
     {
-        self.req_count += 1;
-        self.req_data_len += req_data_len;
         match response {
             Ok(reply) => {
-                http2::build_response(stream_id, reply, &mut self.hpack_encoder, &mut self.output);
+                http2::build_response(
+                    stream_id,
+                    |output| reply.encode(output).unwrap(),
+                    &mut self.hpack_encoder,
+                    &mut self.output,
+                );
             }
             Err(status) => {
                 http2::build_status(stream_id, status, &mut self.hpack_encoder, &mut self.output);
             }
         }
 
-        // TODO call flush() here
+        self.update(req_data_len)
     }
 
     // build response to output buffer
-    pub fn build2(
+    pub fn build_box(
         &mut self,
         stream_id: u32,
         response: Response<Box<dyn crate::http2::ReplyEncode>>,
         req_data_len: usize,
-    ) {
-        self.req_count += 1;
-        self.req_data_len += req_data_len;
+    ) -> Result<(), std::io::Error> {
         match response {
             Ok(reply) => {
-                http2::build_response2(stream_id, reply, &mut self.hpack_encoder, &mut self.output);
+                http2::build_response(
+                    stream_id,
+                    |output| reply.encode(output).unwrap(),
+                    &mut self.hpack_encoder,
+                    &mut self.output,
+                );
             }
             Err(status) => {
                 http2::build_status(stream_id, status, &mut self.hpack_encoder, &mut self.output);
             }
         }
 
-        // TODO call flush() here
+        self.update(req_data_len)
+    }
+
+    fn update(&mut self, req_data_len: usize) -> Result<(), std::io::Error> {
+        self.req_count += 1;
+        self.req_data_len += req_data_len;
+
+        if self.req_count >= self.max_flush_requests || self.output.len() >= self.max_flush_size {
+            self.flush()
+        } else {
+            Ok(())
+        }
     }
 
     // flush the output buffer
-    pub fn flush(&mut self, is_force: bool) -> Result<(), std::io::Error> {
-        if !is_force {
-            if self.req_count < self.max_flush_requests && self.output.len() < self.max_flush_size {
-                return Ok(());
-            }
-        } else {
-            if self.output.len() == 0 {
-                return Ok(());
-            }
+    pub fn flush(&mut self) -> Result<(), std::io::Error> {
+        if self.output.len() == 0 {
+            return Ok(());
         }
 
         http2::build_window_update(self.req_data_len, &mut self.output);

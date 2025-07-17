@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::config::Config;
+use crate::dispatch;
 use crate::error::Error;
 use crate::hpack_decoder::{Decoder, PathKind};
 use crate::http2::*;
@@ -61,16 +62,30 @@ pub fn handle(
 
     // prepare some contexts
 
+    // network input buffer
     let mut input = Vec::new();
     input.resize(config.max_frame_size, 0);
 
+    // request info in last HEADER frame
     let mut last_in_header = None;
+
     let mut hpack_decoder: Decoder = Decoder::new();
 
     let mut route_cache = Vec::new();
 
-    let c2 = Arc::new(Mutex::new(c.try_clone()?)); // output end
-    let mut resp_end = ResponseEnd::new(c2, &config); // only for local-mode
+    // split into 2 ends.
+    // Read requests from `c` and write response into `c2`.
+    // Wrap `Arc` for backend-response thread in dispatch-mode.
+    let c2 = Arc::new(Mutex::new(c.try_clone()?));
+
+    // create backend response thread if any dispatch-mode service
+    if services.iter().any(|svc| svc.is_dispatch_mode()) {
+        dispatch::new_response_routine(c2.clone(), &config);
+    }
+
+    // in local-mode, this writes all responses;
+    // in dispatch-mode, this only writes dispatch-failure responses.
+    let mut resp_end = ResponseEnd::new(c2, &config);
 
     // read and parse input data
     let mut last_end = 0;
@@ -87,6 +102,7 @@ pub fn handle(
 
             //println!("get frame: {:?}", frame);
             match frame.kind {
+                // call ::route() with cache
                 FrameKind::Headers => {
                     if last_in_header.is_some() {
                         return Err(Error::InvalidHttp2("continoues HEADER frames"));
@@ -114,6 +130,8 @@ pub fn handle(
                     };
                     last_in_header = Some((frame.stream_id, isvc, req_disc));
                 }
+
+                // call ::handle() to handle request
                 FrameKind::Data => {
                     let req_buf = frame.process_data()?;
 
@@ -126,7 +144,7 @@ pub fn handle(
                     }
                     let req_buf = &req_buf[5..];
 
-                    // request
+                    // check out request info
                     let Some((stream_id, isvc, req_disc)) = last_in_header.take() else {
                         return Err(Error::InvalidHttp2("DATA frame without HEADER"));
                     };
@@ -134,20 +152,20 @@ pub fn handle(
                         return Err(Error::InvalidHttp2("DATA frame dismatch HEADER"));
                     }
 
-                    // path
+                    // handle request
                     services[isvc].handle(
                         req_disc,
                         req_buf,
                         stream_id,
                         frame.len as usize,
                         &mut resp_end,
-                    );
+                    )?;
                 }
                 _ => (),
             }
         }
 
-        resp_end.flush(true)?;
+        resp_end.flush()?;
 
         // for next loop
         if pos == 0 {

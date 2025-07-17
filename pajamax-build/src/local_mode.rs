@@ -45,7 +45,9 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
         buf,
         "impl<T> pajamax::PajamaxService for {}Server<T>
         where T: {}
-        {{",
+        {{
+            fn is_dispatch_mode(&self) -> bool {{ false }}
+        ",
         service.name, service.name
     )
     .unwrap();
@@ -87,7 +89,7 @@ fn gen_service_handle(service: &prost_build::Service, buf: &mut String) {
             stream_id: u32,
             frame_len: usize,
             resp_end: &mut pajamax::response_end::ResponseEnd,
-        ) {{
+        ) -> Result<(), pajamax::error::Error> {{
             use prost::Message;
             match req_disc {{"
     )
@@ -97,14 +99,13 @@ fn gen_service_handle(service: &prost_build::Service, buf: &mut String) {
         writeln!(
             buf,
             "{} => {{
-                let request = {}::decode(req_buf).unwrap(); // TODO unwrap
+                let request = {}::decode(req_buf)?;
                 let response = self.0.{}(request);
-                resp_end.build(stream_id, response, frame_len);
-                resp_end.flush(false).unwrap();
+                Ok(resp_end.build(stream_id, response, frame_len)?)
             }}",
             i, m.input_type, m.name
         )
         .unwrap();
     }
-    writeln!(buf, "_=> todo!(), }} }}").unwrap();
+    writeln!(buf, "d => unreachable!(\"invalid req_disc: {{d}}\"), }} }}").unwrap();
 }

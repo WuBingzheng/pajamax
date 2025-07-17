@@ -1,7 +1,4 @@
-//! Dispatch mode.
-//!
-//! See the module's document for details.
-
+use std::cell::RefCell;
 use std::net::TcpStream;
 use std::sync::{mpsc, Arc, Mutex};
 
@@ -39,61 +36,56 @@ pub struct DispatchResponse {
     pub response: Response<Box<dyn ReplyEncode>>,
 }
 
-use std::cell::RefCell;
 thread_local! {
-    static RESP_TX: RefCell<Option<ResponseTx>> = RefCell::new(None);
+    static RESP_TX: RefCell<ResponseTx> = panic!();
 }
 
-pub fn get_resp_tx(resp_end: &ResponseEnd) -> ResponseTx {
-    RESP_TX.with_borrow_mut(|cell| match cell {
-        None => {
-            let c = resp_end.c.clone();
-            let config = Config::new();
-            let resp_tx = new_response_routine(c, &config);
-            *cell = Some(resp_tx.clone());
-            resp_tx
-        }
-        Some(resp_tx) => resp_tx.clone(),
-    })
-}
-
-pub fn new_response_routine(c: Arc<Mutex<TcpStream>>, config: &Config) -> ResponseTx {
+// create a backend thread with response-channels
+pub fn new_response_routine(c: Arc<Mutex<TcpStream>>, config: &Config) {
     let resp_end = ResponseEnd::new(c, config);
 
     let (resp_tx, resp_rx) = mpsc::sync_channel(config.max_concurrent_streams);
+
+    RESP_TX.set(resp_tx);
 
     std::thread::Builder::new()
         .name(String::from("pajamax-r")) // response routine
         .spawn(move || response_routine(resp_end, resp_rx))
         .unwrap();
-
-    resp_tx
 }
 
+// dispatch the request to req_tx
 pub fn dispatch<Req>(
     req_tx: &RequestTx<Req>,
     request: Req,
     stream_id: u32,
     req_data_len: usize,
     resp_end: &mut ResponseEnd,
-) -> Response<()> {
+) -> Result<(), Error> {
     let disp_req = DispatchRequest {
         request,
         stream_id,
         req_data_len,
-        resp_tx: get_resp_tx(resp_end),
+        resp_tx: RESP_TX.with_borrow(|tx| tx.clone()),
     };
 
-    req_tx.try_send(disp_req).map_err(|err| match err {
-        mpsc::TrySendError::Full(_) => Status {
-            code: Code::Unavailable,
-            message: String::from("dispatch channel is full"),
-        },
-        mpsc::TrySendError::Disconnected(_) => Status {
-            code: Code::Internal,
-            message: String::from("dispatch channel is closed"),
-        },
-    })
+    match req_tx.try_send(disp_req) {
+        Ok(_) => Ok(()),
+        Err(err) => {
+            let status = match err {
+                mpsc::TrySendError::Full(_) => Status {
+                    code: Code::Unavailable,
+                    message: String::from("dispatch channel is full"),
+                },
+                mpsc::TrySendError::Disconnected(_) => Status {
+                    code: Code::Internal,
+                    message: String::from("dispatch channel is closed"),
+                },
+            };
+            let response: Response<()> = Err(status);
+            Ok(resp_end.build(stream_id, response, req_data_len)?)
+        }
+    }
 }
 
 // output thread
@@ -101,16 +93,15 @@ fn response_routine(mut resp_end: ResponseEnd, resp_rx: ResponseRx) -> Result<()
     loop {
         let resp = match resp_rx.try_recv() {
             Ok(resp) => resp,
-            Err(mpsc::TryRecvError::Disconnected) => break,
+            Err(mpsc::TryRecvError::Disconnected) => {
+                break Err(Error::ChannelClosed);
+            }
             Err(mpsc::TryRecvError::Empty) => {
-                resp_end.flush(true)?;
-                resp_rx.recv()?
+                resp_end.flush()?;
+                resp_rx.recv()? // blocking mode
             }
         };
 
-        resp_end.build2(resp.stream_id, resp.response, resp.req_data_len);
-        resp_end.flush(false)?;
+        resp_end.build_box(resp.stream_id, resp.response, resp.req_data_len)?;
     }
-
-    Err(Error::ChannelClosed)
 }

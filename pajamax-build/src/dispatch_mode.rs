@@ -103,7 +103,9 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
         buf,
         "impl<T> pajamax::PajamaxService for {}Server<T>
         where T: {}Dispatch
-        {{",
+        {{
+            fn is_dispatch_mode(&self) -> bool {{ true }}
+        ",
         service.name, service.name
     )
     .unwrap();
@@ -145,7 +147,7 @@ fn gen_service_handle(service: &prost_build::Service, buf: &mut String) {
             stream_id: u32,
             frame_len: usize,
             resp_end: &mut pajamax::response_end::ResponseEnd,
-        ) {{
+        ) -> Result<(), pajamax::error::Error> {{
             use prost::Message;
             match req_disc {{"
     )
@@ -155,15 +157,15 @@ fn gen_service_handle(service: &prost_build::Service, buf: &mut String) {
         writeln!(
             buf,
             "{} => {{
-                let request = {}::decode(req_buf).unwrap(); // TODO unwrap
+                let request = {}::decode(req_buf)?;
                 let req_tx = self.0.{}(&request);
-                pajamax::dispatch::dispatch(req_tx, {}Request::{}(request), stream_id, frame_len, resp_end);
+                pajamax::dispatch::dispatch(req_tx, {}Request::{}(request), stream_id, frame_len, resp_end)
             }}",
             i, m.input_type, m.name, service.name, m.proto_name
         )
         .unwrap();
     }
-    writeln!(buf, "_=> todo!(), }} }}").unwrap();
+    writeln!(buf, "d => unreachable!(\"invalid req_disc: {{d}}\"), }} }}").unwrap();
 }
 
 // struct {Service}ShardServer
