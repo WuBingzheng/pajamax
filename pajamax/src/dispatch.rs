@@ -9,8 +9,8 @@ use crate::config::Config;
 use crate::error::Error;
 use crate::response_end::ResponseEnd;
 use crate::status::{Code, Status};
+use crate::ReplyEncode;
 use crate::Response;
-//use crate::{PajamaxService, RespEncode};
 
 /// Send end of request channel for dispatch mode.
 pub type RequestTx<Req> = mpsc::SyncSender<DispatchRequest<Req>>;
@@ -24,11 +24,6 @@ type ResponseTx = mpsc::SyncSender<DispatchResponse>;
 /// Receive end of response channel for dispatch mode.
 type ResponseRx = mpsc::Receiver<DispatchResponse>;
 
-pub enum DispatchResult<'a, Req, Reply> {
-    Dispatch(&'a RequestTx<Req>),
-    Local(Response<Reply>),
-}
-
 /// Dispatched request in dispatch mode.
 pub struct DispatchRequest<Req> {
     pub stream_id: u32,
@@ -41,36 +36,8 @@ pub struct DispatchRequest<Req> {
 pub struct DispatchResponse {
     pub stream_id: u32,
     pub req_data_len: usize,
-    pub response: Response<Box<dyn crate::http2::RespEncode>>,
-    //pub response: Response<Box<dyn prost::Message>>,
-    //response: Response<Box<dyn FnOnce(&mut Vec<u8>) + Send>>,
+    pub response: Response<Box<dyn ReplyEncode>>,
 }
-
-// impl<Req> DispatchRequest<Req> {
-//     // handle the request
-//     // call its method and send it back to response channel
-//     pub fn handle<S>(self, ctx: &mut S)
-//     where
-//         S: PajamaxDispatchShard,
-//     {
-//         let Self {
-//             request,
-//             stream_id,
-//             req_data_len,
-//             resp_tx,
-//         } = self;
-
-//         let response = ctx.call(request);
-
-//         let resp = DispatchResponse {
-//             stream_id,
-//             req_data_len,
-//             response,
-//         };
-
-//         let _ = resp_tx.send(resp);
-//     }
-// }
 
 use std::cell::RefCell;
 thread_local! {

@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::mpsc;
 
 use pajamax::status::{Code, Status};
 
@@ -41,30 +41,25 @@ struct MyDictShard {
 // Methods for front server.
 //
 // Here is no get/set/delete methods which are always handled in backend shard server.
-impl DictStore for MyDictFront {
-    fn set(&self, req: &Entry) -> DictStoreDispatchResult<SetReply> {
-        pajamax::dispatch::DispatchResult::Dispatch(self.pick_req_tx(&req.key))
+impl DictStoreDispatch for MyDictFront {
+    fn set(&self, req: &Entry) -> &DictStoreRequestTx {
+        self.pick_req_tx(&req.key)
     }
 
-    fn get(&self, req: &Key) -> DictStoreDispatchResult<Value> {
-        pajamax::dispatch::DispatchResult::Dispatch(self.pick_req_tx(&req.key))
+    fn get(&self, req: &Key) -> &DictStoreRequestTx {
+        self.pick_req_tx(&req.key)
     }
 
-    fn delete(&self, req: &Key) -> DictStoreDispatchResult<Value> {
-        pajamax::dispatch::DispatchResult::Dispatch(self.pick_req_tx(&req.key))
+    fn delete(&self, req: &Key) -> &DictStoreRequestTx {
+        self.pick_req_tx(&req.key)
     }
 
-    fn list_shard(&self, req: &ListShardRequest) -> DictStoreDispatchResult<ListShardReply> {
-        pajamax::dispatch::DispatchResult::Local(Err(Status {
-            code: Code::InvalidArgument,
-            message: format!("invalid shard: {}", req.shard),
-        }))
+    fn list_shard(&self, req: &ListShardRequest) -> &DictStoreRequestTx {
+        todo!()
     }
 
-    fn stats(&self, req: &EmptyRequest) -> DictStoreDispatchResult<StatsReply> {
-        pajamax::dispatch::DispatchResult::Local(Ok(StatsReply {
-            count: TOTAL_COUNT.load(Ordering::Relaxed) as u32,
-        }))
+    fn stats(&self, req: &EmptyRequest) -> &DictStoreRequestTx {
+        todo!()
     }
 }
 
@@ -114,6 +109,9 @@ impl DictStoreShard for MyDictShard {
                 .collect(),
         })
     }
+    fn stats(&mut self, _req: EmptyRequest) -> Result<StatsReply, Status> {
+        todo!()
+    }
 }
 
 // some business code
@@ -144,8 +142,7 @@ fn shard_routine(req_rx: DictStoreRequestRx) {
     let mut shard = DictStoreShardServer::new(shard);
 
     while let Ok(req) = req_rx.recv() {
-        shard.call(req);
-        //req.handle(&mut shard);
+        shard.handle(req);
     }
 }
 

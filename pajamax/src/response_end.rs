@@ -55,9 +55,7 @@ impl ResponseEnd {
     pub fn build2(
         &mut self,
         stream_id: u32,
-        //response: Response<Box<dyn FnOnce(&mut Vec<u8>) + Send>>,
-        response: Response<Box<dyn crate::http2::RespEncode>>,
-        //response: Response<Box<dyn prost::Message>>,
+        response: Response<Box<dyn crate::http2::ReplyEncode>>,
         req_data_len: usize,
     ) {
         self.req_count += 1;

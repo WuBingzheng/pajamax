@@ -180,7 +180,7 @@ pub mod dispatch;
 pub mod status;
 
 pub use config::Config;
-pub use http2::RespEncode;
+pub use http2::ReplyEncode;
 
 /// Wrapper of Result<Reply, Status>.
 pub type Response<Reply> = Result<Reply, status::Status>;

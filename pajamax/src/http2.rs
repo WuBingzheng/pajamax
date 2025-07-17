@@ -235,7 +235,7 @@ pub fn build_response(
 pub fn build_response2(
     stream_id: u32,
     //reply_fn: Box<dyn FnOnce(&mut Vec<u8>) + Send>,
-    reply: Box<dyn RespEncode>,
+    reply: Box<dyn ReplyEncode>,
     //reply: Box<dyn prost::Message>,
     hpack_encoder: &mut Encoder,
     output: &mut Vec<u8>,
@@ -352,6 +352,6 @@ fn build_u16(n: u16, buf: &mut [u8]) {
 }
 
 // Used by `pajamax-build` crate.
-pub trait RespEncode: Send {
+pub trait ReplyEncode: Send {
     fn encode(&self, output: &mut Vec<u8>) -> Result<(), prost::EncodeError>;
 }

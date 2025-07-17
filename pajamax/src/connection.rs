@@ -5,7 +5,6 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::config::Config;
-//use crate::dispatch::DispatchCtx;
 use crate::error::Error;
 use crate::hpack_decoder::{Decoder, PathKind};
 use crate::http2::*;
@@ -24,21 +23,24 @@ where
 
     let listener = TcpListener::bind(addr)?;
     for c in listener.incoming() {
+        // concurrent limit
         if concurrent.load(Ordering::Relaxed) >= config.max_concurrent_connections {
             continue;
         }
         concurrent.fetch_add(1, Ordering::Relaxed);
 
+        // configure
         let c = c?;
         c.set_read_timeout(Some(config.idle_timeout))?;
         c.set_write_timeout(Some(config.write_timeout))?;
 
+        // new thread for each connection
         let concurrent = concurrent.clone();
         let services = services.clone();
         thread::Builder::new()
             .name(String::from("pajamax-w"))
             .spawn(move || {
-                match handle2(services, c, config) {
+                match handle(services, c, config) {
                     Err(err) => println!("connection error: {:?}", err),
                     Ok(_) => (),
                 }
@@ -49,7 +51,8 @@ where
     unreachable!();
 }
 
-pub fn handle2(
+// handle each connection on a new thread
+pub fn handle(
     services: Vec<Arc<dyn PajamaxService + Send + Sync + 'static>>,
     mut c: TcpStream,
     config: Config,
@@ -57,16 +60,17 @@ pub fn handle2(
     handshake(&mut c, &config)?;
 
     // prepare some contexts
+
     let mut input = Vec::new();
     input.resize(config.max_frame_size, 0);
 
     let mut last_in_header = None;
     let mut hpack_decoder: Decoder = Decoder::new();
 
-    let mut path_cache = Vec::new();
+    let mut route_cache = Vec::new();
 
     let c2 = Arc::new(Mutex::new(c.try_clone()?)); // output end
-    let mut resp_end = ResponseEnd::new(c2.clone(), &config);
+    let mut resp_end = ResponseEnd::new(c2, &config); // only for local-mode
 
     // read and parse input data
     let mut last_end = 0;
@@ -91,21 +95,21 @@ pub fn handle2(
                     let headers_buf = frame.process_headers()?;
 
                     let (isvc, req_disc) = match hpack_decoder.find_path(headers_buf)? {
-                        PathKind::Cached(cached) => path_cache[cached],
+                        PathKind::Cached(cached) => route_cache[cached],
                         PathKind::Plain(path) => {
-                            let len0 = path_cache.len();
+                            let len0 = route_cache.len();
                             for (i, svc) in services.iter().enumerate() {
                                 if let Some(req_disc) = svc.route(&path) {
-                                    path_cache.push((i, req_disc));
+                                    route_cache.push((i, req_disc));
                                     break;
                                 }
                             }
-                            if path_cache.len() == len0 {
+                            if route_cache.len() == len0 {
                                 return Err(Error::UnknownMethod(
                                     String::from_utf8_lossy(&path).into(),
                                 ));
                             }
-                            path_cache[len0]
+                            route_cache[len0]
                         }
                     };
                     last_in_header = Some((frame.stream_id, isvc, req_disc));
