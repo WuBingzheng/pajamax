@@ -3,6 +3,7 @@ use std::net::TcpStream;
 use std::sync::{mpsc, Arc, Mutex};
 
 use crate::config::Config;
+use crate::connection::local_build_response;
 use crate::error::Error;
 use crate::response_end::ResponseEnd;
 use crate::status::{Code, Status};
@@ -60,7 +61,6 @@ pub fn dispatch<Req>(
     request: Req,
     stream_id: u32,
     req_data_len: usize,
-    resp_end: &mut ResponseEnd,
 ) -> Result<(), Error> {
     let disp_req = DispatchRequest {
         request,
@@ -83,7 +83,7 @@ pub fn dispatch<Req>(
                 },
             };
             let response: Response<()> = Err(status);
-            Ok(resp_end.build(stream_id, response, req_data_len)?)
+            local_build_response(stream_id, response, req_data_len)
         }
     }
 }

@@ -8,7 +8,7 @@ use crate::http2;
 use crate::Response;
 
 pub struct ResponseEnd {
-    pub c: Arc<Mutex<TcpStream>>, // TODO pub
+    c: Arc<Mutex<TcpStream>>,
     req_count: usize,
     req_data_len: usize,
     hpack_encoder: Encoder,

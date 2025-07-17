@@ -18,17 +18,14 @@ pub fn generate(service: prost_build::Service, buf: &mut String) {
 // The server context is global, wrapped by `Arc` and shared by all
 // network threads.
 fn gen_trait_dispatch(service: &prost_build::Service, buf: &mut String) {
-    writeln!(buf, "pub trait {}Dispatch {{", service.name).unwrap();
-
-    for m in service.methods.iter() {
-        writeln!(
-            buf,
-            "fn {}(&self, req: &{}) -> &{}RequestTx;",
-            m.name, m.input_type, service.name
-        )
-        .unwrap();
-    }
-    writeln!(buf, "}}").unwrap();
+    writeln!(
+        buf,
+        "pub trait {}Dispatch {{
+            fn dispatch_to(&self, req: &{}Request) -> &{}RequestTx;
+        }}",
+        service.name, service.name, service.name
+    )
+    .unwrap();
 }
 
 // trait {Service}Shard
@@ -146,7 +143,6 @@ fn gen_service_handle(service: &prost_build::Service, buf: &mut String) {
             req_buf: &[u8],
             stream_id: u32,
             frame_len: usize,
-            resp_end: &mut pajamax::response_end::ResponseEnd,
         ) -> Result<(), pajamax::error::Error> {{
             use prost::Message;
             match req_disc {{"
@@ -157,14 +153,15 @@ fn gen_service_handle(service: &prost_build::Service, buf: &mut String) {
         writeln!(
             buf,
             "{} => {{
-                let request = {}::decode(req_buf)?;
-                let req_tx = self.0.{}(&request);
-                pajamax::dispatch::dispatch(req_tx, {}Request::{}(request), stream_id, frame_len, resp_end)
+                let request = {}Request::{}({}::decode(req_buf)?);
+                let req_tx = self.0.dispatch_to(&request);
+                pajamax::dispatch::dispatch(req_tx, request, stream_id, frame_len)
             }}",
-            i, m.input_type, m.name, service.name, m.proto_name
+            i, service.name, m.proto_name, m.input_type
         )
         .unwrap();
     }
+
     writeln!(buf, "d => unreachable!(\"invalid req_disc: {{d}}\"), }} }}").unwrap();
 }
 
@@ -186,7 +183,7 @@ fn gen_shard_server(service: &prost_build::Service, buf: &mut String) {
             #[allow(dead_code)]
             pub fn inner(&self) -> &T {{ &self.0 }}
 
-            pub fn handle(&mut self, disp_req: pajamax::dispatch::DispatchRequest<{}Request>) {{ // TODO fail?
+            pub fn handle(&mut self, disp_req: pajamax::dispatch::DispatchRequest<{}Request>) {{
                 let response = match disp_req.request {{",
         service.name, service.name, service.name, service.name, service.name
     )

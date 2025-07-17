@@ -180,6 +180,7 @@ pub mod response_end;
 pub mod status;
 
 pub use config::Config;
+pub use connection::local_build_response;
 pub use http2::ReplyEncode;
 
 /// Wrapper of Result<Reply, Status>.
@@ -207,7 +208,6 @@ pub trait PajamaxService {
         req_buf: &[u8],
         stream_id: u32,
         data_len: usize,
-        resp_end: &mut crate::response_end::ResponseEnd,
     ) -> Result<(), error::Error>;
 
     fn is_dispatch_mode(&self) -> bool;

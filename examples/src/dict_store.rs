@@ -42,20 +42,16 @@ struct MyDictShard {
 //
 // Here is no get/set/delete methods which are always handled in backend shard server.
 impl DictStoreDispatch for MyDictFront {
-    fn set(&self, req: &Entry) -> &DictStoreRequestTx {
-        self.pick_req_tx(&req.key)
-    }
-
-    fn get(&self, req: &Key) -> &DictStoreRequestTx {
-        self.pick_req_tx(&req.key)
-    }
-
-    fn delete(&self, req: &Key) -> &DictStoreRequestTx {
-        self.pick_req_tx(&req.key)
-    }
-
-    fn list_shard(&self, _: &ListShardRequest) -> &DictStoreRequestTx {
-        todo!()
+    fn dispatch_to(&self, req: &DictStoreRequest) -> &DictStoreRequestTx {
+        match req {
+            DictStoreRequest::Get(req) => self.pick_req_tx(&req.key),
+            DictStoreRequest::Set(req) => self.pick_req_tx(&req.key),
+            DictStoreRequest::Delete(req) => self.pick_req_tx(&req.key),
+            DictStoreRequest::ListShard(req) => {
+                let i = req.shard as usize % self.req_txs.len();
+                &self.req_txs[i]
+            }
+        }
     }
 }
 

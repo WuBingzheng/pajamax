@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::io::Read;
 use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -10,7 +11,7 @@ use crate::error::Error;
 use crate::hpack_decoder::{Decoder, PathKind};
 use crate::http2::*;
 use crate::response_end::ResponseEnd;
-use crate::PajamaxService;
+use crate::{PajamaxService, Response};
 
 pub fn serve_with_config<A>(
     services: Vec<Arc<dyn PajamaxService + Send + Sync + 'static>>,
@@ -52,6 +53,22 @@ where
     unreachable!();
 }
 
+thread_local! {
+    static RESPONSE_END: RefCell<ResponseEnd> = panic!();
+}
+
+pub fn local_build_response<Reply>(
+    stream_id: u32,
+    response: Response<Reply>,
+    req_data_len: usize,
+) -> Result<(), Error>
+where
+    Reply: prost::Message,
+{
+    RESPONSE_END
+        .with_borrow_mut(|resp_end| Ok(resp_end.build(stream_id, response, req_data_len)?))
+}
+
 // handle each connection on a new thread
 pub fn handle(
     services: Vec<Arc<dyn PajamaxService + Send + Sync + 'static>>,
@@ -85,7 +102,7 @@ pub fn handle(
 
     // in local-mode, this writes all responses;
     // in dispatch-mode, this only writes dispatch-failure responses.
-    let mut resp_end = ResponseEnd::new(c2, &config);
+    RESPONSE_END.set(ResponseEnd::new(c2, &config));
 
     // read and parse input data
     let mut last_end = 0;
@@ -153,19 +170,13 @@ pub fn handle(
                     }
 
                     // handle request
-                    services[isvc].handle(
-                        req_disc,
-                        req_buf,
-                        stream_id,
-                        frame.len as usize,
-                        &mut resp_end,
-                    )?;
+                    services[isvc].handle(req_disc, req_buf, stream_id, frame.len as usize)?;
                 }
                 _ => (),
             }
         }
 
-        resp_end.flush()?;
+        RESPONSE_END.with_borrow_mut(|resp_end| resp_end.flush())?;
 
         // for next loop
         if pos == 0 {
