@@ -1,13 +1,13 @@
 [package]
 name = "pajamax"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Wu Bingzheng <wubingzheng@gmail.com>"]
 description = "Fast gRPC server framework in synchronous mode."
 license = "MIT"
 repository = "https://github.com/WuBingzheng/pajamax"
 documentation = "https://docs.rs/pajamax"
-keywords = ["grpc", "protobuf", "synchronous"]
+keywords = ["grpc", "protobuf", "blocking", "synchronous"]
 categories = ["network-programming"]
 
 [dependencies]

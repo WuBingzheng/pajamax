@@ -85,10 +85,10 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
         buf,
         "pub struct {}Server<T: {}Dispatch>(T);
 
+        #[allow(dead_code)]
         impl<T: {}Dispatch> {}Server<T> {{
             pub fn new(inner: T) -> Self {{ Self(inner) }}
 
-            #[allow(dead_code)]
             pub fn inner(&self) -> &T {{ &self.0 }}
         }}",
         service.name, service.name, service.name, service.name

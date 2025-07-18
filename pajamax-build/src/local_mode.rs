@@ -30,11 +30,11 @@ fn gen_server(service: &prost_build::Service, buf: &mut String) {
         buf,
         "pub struct {}Server<T: {}>(T);
 
+        #[allow(dead_code)]
         impl<T: {}> {}Server<T> {{
             pub fn new(inner: T) -> Self {{ Self(inner) }}
 
-            #[allow(dead_code)]
-            pub fn get_inner(&self) -> &T {{ &self.0 }}
+            pub fn inner(&self) -> &T {{ &self.0 }}
         }}",
         service.name, service.name, service.name, service.name
     )
