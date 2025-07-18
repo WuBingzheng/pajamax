@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::io::Read;
 use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -42,10 +43,7 @@ where
         thread::Builder::new()
             .name(String::from("pajamax-w"))
             .spawn(move || {
-                match handle(services, c, config) {
-                    Err(err) => println!("connection error: {:?}", err),
-                    Ok(_) => (),
-                }
+                let _ = handle(services, c, config); // TODO add log
                 concurrent.fetch_sub(1, Ordering::Relaxed);
             })
             .unwrap();
@@ -55,6 +53,12 @@ where
 
 thread_local! {
     static RESPONSE_END: RefCell<ResponseEnd> = panic!();
+}
+
+struct Stream {
+    id: u32,
+    isvc: usize, // index of services
+    req_disc: usize,
 }
 
 // response in local thread
@@ -84,8 +88,8 @@ pub fn handle(
     let mut input = Vec::new();
     input.resize(config.max_frame_size, 0);
 
-    // request info in last HEADER frame
-    let mut last_in_header = None;
+    // stream info in HEADER frame
+    let mut streams = VecDeque::new();
 
     let mut hpack_decoder: Decoder = Decoder::new();
 
@@ -118,14 +122,10 @@ pub fn handle(
         while let Some(frame) = Frame::parse(&input[pos..end]) {
             pos += Frame::HEAD_SIZE + frame.len; // for next loop
 
-            //println!("get frame: {:?}", frame);
+            //println!("get frame: {:?}", frame); // TODO add log
             match frame.kind {
                 // call ::route() with cache
                 FrameKind::Headers => {
-                    if last_in_header.is_some() {
-                        return Err(Error::InvalidHttp2("continoues HEADER frames"));
-                    }
-
                     let headers_buf = frame.process_headers()?;
 
                     let (isvc, req_disc) = match hpack_decoder.find_path(headers_buf)? {
@@ -146,7 +146,12 @@ pub fn handle(
                             route_cache[len0]
                         }
                     };
-                    last_in_header = Some((frame.stream_id, isvc, req_disc));
+
+                    streams.push_back(Stream {
+                        id: frame.stream_id,
+                        isvc,
+                        req_disc,
+                    });
                 }
 
                 // call ::handle() to handle request
@@ -163,15 +168,13 @@ pub fn handle(
                     let req_buf = &req_buf[5..];
 
                     // check out request info
-                    let Some((stream_id, isvc, req_disc)) = last_in_header.take() else {
+                    let Some(i) = streams.iter().position(|s| s.id == frame.stream_id) else {
                         return Err(Error::InvalidHttp2("DATA frame without HEADER"));
                     };
-                    if stream_id != frame.stream_id {
-                        return Err(Error::InvalidHttp2("DATA frame dismatch HEADER"));
-                    }
+                    let Stream { id, isvc, req_disc } = streams.remove(i).unwrap();
 
                     // handle request
-                    services[isvc].handle(req_disc, req_buf, stream_id, frame.len as usize)?;
+                    services[isvc].handle(req_disc, req_buf, id, frame.len as usize)?;
                 }
                 _ => (),
             }
