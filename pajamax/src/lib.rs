@@ -172,9 +172,10 @@ mod macros;
 #[doc(hidden)]
 pub mod dispatch;
 #[doc(hidden)]
+pub mod error;
+#[doc(hidden)]
 pub mod response_end;
 
-pub mod error;
 pub mod status;
 pub use config::{Config, ConfigedServer};
 
@@ -183,9 +184,10 @@ pub use connection::local_build_response;
 #[doc(hidden)]
 pub use http2::ReplyEncode;
 
-/// Wrapper of Result<Reply, Status>.
+/// Wrapper of `Result<Reply, status::Status>`.
 pub type Response<Reply> = Result<Reply, status::Status>;
 
+#[doc(hidden)]
 /// Used by pajamax-build crate.
 pub trait PajamaxService {
     // Route the path to request enum discriminant as usize.
@@ -210,5 +212,6 @@ pub trait PajamaxService {
         data_len: usize,
     ) -> Result<(), error::Error>;
 
+    // Take `self` for object-safe.
     fn is_dispatch_mode(&self) -> bool;
 }

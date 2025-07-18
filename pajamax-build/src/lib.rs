@@ -117,38 +117,70 @@ pub fn compile_protos_in_dispatch(
 }
 
 /// Complie protofile. Build some services as local-mode and others as dispatch-mode.
+///
+/// # Examples:
+///
+/// ```
+/// // Build "StatsService" and "AccountService" as local-mode and others as dispatch-mode.
+/// pajamax_build::compile_protos_list_local(
+///     &["proto/helloworld.proto"],
+///     &["."],
+///     ["StatsService", "AccountService"])?;
+/// ```
 pub fn compile_protos_list_local(
     protos: &[impl AsRef<Path>],
     includes: &[impl AsRef<Path>],
-    local_svcs: Vec<&'static str>,
+    local_svcs: impl Into<Vec<&'static str>>,
 ) -> std::io::Result<()> {
     prost_build::Config::new()
-        .service_generator(Box::new(PajamaxGen::ListLocal(local_svcs)))
+        .service_generator(Box::new(PajamaxGen::ListLocal(local_svcs.into())))
         .compile_protos(protos, includes)
 }
 
 /// Complie protofile. Build some services as dispatch-mode and others as local-mode.
+///
+/// # Examples:
+///
+/// ```
+/// // Build "OrderService" as dispatch-mode and others as local-mode.
+/// pajamax_build::compile_protos_list_local(
+///     &["proto/helloworld.proto"],
+///     &["."],
+///     ["OrderService"])?;
+/// ```
 pub fn compile_protos_list_dispatch(
     protos: &[impl AsRef<Path>],
     includes: &[impl AsRef<Path>],
-    dispatch_svcs: Vec<&'static str>,
+    dispatch_svcs: impl Into<Vec<&'static str>>,
 ) -> std::io::Result<()> {
     prost_build::Config::new()
-        .service_generator(Box::new(PajamaxGen::ListDispatch(dispatch_svcs)))
+        .service_generator(Box::new(PajamaxGen::ListDispatch(dispatch_svcs.into())))
         .compile_protos(protos, includes)
 }
 
 /// Complie protofile. Build some services as local-mode and some as dispatch-mode.
+///
+/// # Examples:
+///
+/// ```
+/// // Build "StatsService" and "AccountService" as local-mode,
+/// // while "OrderService" as dispatch-mode, and ignore others.
+/// pajamax_build::compile_protos_list_local(
+///     &["proto/helloworld.proto"],
+///     &["."],
+///     ["StatsService", "AccountService"],
+///     ["OrderService"])?;
+/// ```
 pub fn compile_protos_list_both(
     protos: &[impl AsRef<Path>],
     includes: &[impl AsRef<Path>],
-    local_svcs: Vec<&'static str>,
-    dispatch_svcs: Vec<&'static str>,
+    local_svcs: impl Into<Vec<&'static str>>,
+    dispatch_svcs: impl Into<Vec<&'static str>>,
 ) -> std::io::Result<()> {
     prost_build::Config::new()
         .service_generator(Box::new(PajamaxGen::ListBoth {
-            local_svcs,
-            dispatch_svcs,
+            local_svcs: local_svcs.into(),
+            dispatch_svcs: dispatch_svcs.into(),
         }))
         .compile_protos(protos, includes)
 }
