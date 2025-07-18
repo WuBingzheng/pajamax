@@ -53,8 +53,8 @@ impl DictStoreDispatch for MyDictDispatch {
 // Contains the key-value items in one shard. Requests are dispatched
 // to some shard by item key or shard number.
 //
-// Each backend shard thread owns one instance. So it's mutable and no
-// locking for handlers.
+// Applications should create one instance for each shard thread.
+// So it's mutable and no locking for handlers.
 struct MyDictShard {
     dict: HashMap<String, f64>,
 }
