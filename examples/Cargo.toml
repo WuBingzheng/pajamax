@@ -13,9 +13,9 @@ name = "dict_store"
 path = "src/dict_store.rs"
 
 [dependencies]
-pajamax = {version="*", path="../pajamax/"}
+pajamax = {path="../pajamax/"}
 prost = "0.13.5"
 
 [build-dependencies]
 prost-build = "0.13.5"
-pajamax-build = {version="*", path="../pajamax-build/"}
+pajamax-build = {path="../pajamax-build/"}

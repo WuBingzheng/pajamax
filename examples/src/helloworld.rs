@@ -14,14 +14,12 @@ mod helloworld {
 }
 
 // define your business context
-#[derive(Clone)]
 struct MyGreeter();
 
 // `Greeter` trait defines all methods in gRPC server
 impl Greeter for MyGreeter {
-    // there are 4 difference compared to tonic's method handler:
+    // there are 3 difference compared to tonic's method handler:
     // - `fn` but not `async fn`
-    // - `&mut self` but not `&self`
     // - `HelloRequest` but not `Request<HelloRequest>`
     // - `HelloReply` but not `Response<HelloReply>`
     fn say_hello(&self, req: HelloRequest) -> Result<HelloReply, Status> {
@@ -39,8 +37,6 @@ fn main() {
     println!("GreeterServer listening on {}", addr);
 
     // start the server
-    // By now we have not support configurations and multiple service,
-    // so this API is simpler than tonic's.
     pajamax::Config::new()
         .add_service(GreeterServer::new(greeter))
         .serve(addr)

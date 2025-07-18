@@ -33,6 +33,7 @@ impl ResponseEnd {
     }
 
     // build response to output buffer
+    // Used in local-mode.
     pub fn build<Reply>(
         &mut self,
         stream_id: u32,
@@ -60,10 +61,12 @@ impl ResponseEnd {
     }
 
     // build response to output buffer
+    // Used in dispatch-mode. We use dynamic-dispatch `dyn` here
+    // to accept different response from multiple services.
     pub fn build_box(
         &mut self,
         stream_id: u32,
-        response: Response<Box<dyn crate::http2::ReplyEncode>>,
+        response: Response<Box<dyn http2::ReplyEncode>>,
         req_data_len: usize,
     ) -> Result<(), std::io::Error> {
         match response {

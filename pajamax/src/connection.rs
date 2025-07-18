@@ -57,6 +57,7 @@ thread_local! {
     static RESPONSE_END: RefCell<ResponseEnd> = panic!();
 }
 
+// response in local thread
 pub fn local_build_response<Reply>(
     stream_id: u32,
     response: Response<Reply>,

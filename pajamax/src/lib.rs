@@ -17,7 +17,7 @@
 //!   line up in a pipeline here.
 //!
 //! - gRPC utilizes HTTP/2, which supports multiplexing. This means that even
-//!   though each client can make multiple concurrent requests, only a single
+//!   though each client can make multiple concurrent requests, only one single
 //!   connection to the server is established. For internal services served
 //!   behind a fixed number of gateway machines, the number of connections they
 //!   handle remains limited and relatively small.
@@ -56,8 +56,8 @@
 //! and reduce the cost of HTTP/2 protocol parsing, resulting in a significant
 //! performance improvement.
 //!
-//! We measured that Pajamax is up to 10X faster than Tonic using `grpc-bench`
-//! project.  See the
+//! We measured that Pajamax is up to at most 10X faster than Tonic using
+//! `grpc-bench` project.  See the
 //! [result](https://github.com/WuBingzheng/pajamax/blob/main/benchmark.md)
 //! for details.
 //!
@@ -70,7 +70,7 @@
 //!
 //! Benefits:
 //!
-//! - 10X performance improvement at most;
+//! - At most 10X performance improvement;
 //! - No asynchronous programming;
 //! - Less dependencies, less compilation time, less executable size.
 //!
@@ -120,17 +120,12 @@
 //!         \--^-----------------+--/
 //!            |                 |
 //!            |send             |recv
-//!     +======+=====+  +========V=======+
-//!     | +----+---+ |  |  +----------+  |
-//!     | | encode | |  |  | dispatch |  |
-//!     | +-^----^-+ |  |  +--+----+--+  |
-//!     |   |    :   |  |     :    |     |
-//!     +===+====:===+  | +---V--+ |     |
-//!         |    :      | |handle| |     |
-//!         |    :      | +---+--+ |     |
-//!         |    :      +=====:====+=====+
-//!         |    :............:    |
-//!      +==+======================V==+
+//!    +=======+======+  +=======V=======+
+//!    |    encode    |  |    decode     |
+//!    |       |      |  |   dispatch    |
+//!    +=======+======+  +=======+=======+
+//!            |                 |
+//!      +=====+=================V====+
 //!      |                            |+
 //!      |     application codes      ||+
 //!      |                            |||
@@ -139,11 +134,6 @@
 //!        +============================+
 //! ```
 //!
-//! Applications can also decide some requests not to be dispatched, which
-//! will be handled in the input-thread, just like in the *Local* mode.
-//! But the responses have to be transfered to the output thread to sent.
-//! As shown by the dashed line in the figure above.
-//!
 //! Applications only need to implement 2 traits to define how to dispatch
 //! requests and how to handle requests. You do not need to handle the
 //! message transfer or encoding, which will be handled by Pajamax.
@@ -151,10 +141,16 @@
 //! See the [dict-store](https://github.com/WuBingzheng/pajamax/blob/main/examples/src/dict_store.rs)
 //! example for more details.
 //!
+//! Each service has one mode, but you can mix services with different modes
+//! in one server.
+//!
 //! # Usage
 //! The usage of Pajamax is very similar to that of Tonic.
 //!
 //! See [`pajamax-build`](https://docs.rs/pajamax-build) crate document for more detail.
+//!
+//! This crate exports many items, but most are used by `pajamx-build` crate.
+//! While applications need not to access them.
 //!
 //! # Status
 //!
@@ -163,7 +159,6 @@
 //! Todo list:
 //!
 //! - More test;
-//! - Configuration builder;
 //! - Hooks like tower's Layer.
 
 mod config;
@@ -174,13 +169,18 @@ mod http2;
 mod huffman;
 mod macros;
 
+#[doc(hidden)]
 pub mod dispatch;
-pub mod error;
+#[doc(hidden)]
 pub mod response_end;
-pub mod status;
 
-pub use config::Config;
+pub mod error;
+pub mod status;
+pub use config::{Config, ConfigedServer};
+
+#[doc(hidden)]
 pub use connection::local_build_response;
+#[doc(hidden)]
 pub use http2::ReplyEncode;
 
 /// Wrapper of Result<Reply, Status>.

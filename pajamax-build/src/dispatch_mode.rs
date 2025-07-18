@@ -11,8 +11,8 @@ pub fn generate(service: prost_build::Service, buf: &mut String) {
 
 // trait {Service}Dispatch
 //
-// Defines all gRPC methods, which return &{Service}RequestTx to
-// specify where to dispatch.
+// The `dispatch_to()` returns a &{Service}RequestTx to
+// specify where to dispatch the requets.
 //
 // Applications should implement this trait for a server context.
 // The server context is global, wrapped by `Arc` and shared by all

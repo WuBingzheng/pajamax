@@ -1,7 +1,11 @@
 // Example for dispatch mode.
+//
+// This is a simple key-value store.
+// We divide items into several shards. Each shard runs on a separate
+// thread. So the gRPC get/set/delete/list requests need to be
+// dispatched to the corresponding thread.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 
 use pajamax::status::{Code, Status};
@@ -13,40 +17,29 @@ mod dict_store {
     pajamax::include_proto!("dict_store");
 }
 
-// Here we have 2 servers: MyDictFront and MyDictShard
+// Here we have 2 servers: MyDictDispatch and MyDictShard.
 
-// This is the front server.
+// This is the MyDictDispatch.
 //
-// It dispatches most requests to backend shards by channels, so it
+// It dispatches requests to backend shards by channels, so it
 // contains the channel-send-end list.
-// However, it handles some requests directly too, e.g. `Stats`.
 //
-// The instance of this struct is not global. Each connection has
-// its own instance. So it need implement `Clone`, and we use `Arc`
-// to swap the channel list.
-struct MyDictFront {
+// The instance of this struct is global. All connections share the
+// same instence. Pajamax will wrap an `Arc` on this. This is the
+// same with `tonic`.
+struct MyDictDispatch {
     req_txs: Vec<DictStoreRequestTx>,
 }
 
-// This is the backend server.
-//
-// Most requests are dispatched to some shard by item key or shard number.
-//
-// Each backend server thread has one instance. It's permanent. It's
-// created in each thread, so it's not need to be `Clone`.
-struct MyDictShard {
-    dict: HashMap<String, f64>,
-}
-
-// Methods for front server.
-//
-// Here is no get/set/delete methods which are always handled in backend shard server.
-impl DictStoreDispatch for MyDictFront {
+impl DictStoreDispatch for MyDictDispatch {
+    // Return the channel send-end where the request will be dispatched to.
     fn dispatch_to(&self, req: &DictStoreRequest) -> &DictStoreRequestTx {
         match req {
+            // hashed by req.key
             DictStoreRequest::Get(req) => self.pick_req_tx(&req.key),
             DictStoreRequest::Set(req) => self.pick_req_tx(&req.key),
             DictStoreRequest::Delete(req) => self.pick_req_tx(&req.key),
+            // by req.shard
             DictStoreRequest::ListShard(req) => {
                 let i = req.shard as usize % self.req_txs.len();
                 &self.req_txs[i]
@@ -55,15 +48,24 @@ impl DictStoreDispatch for MyDictFront {
     }
 }
 
-// Methods for backend server.
+// This is the MyDictShard.
 //
-// Here is no stats methods which is always handled in front server.
+// Contains the key-value items in one shard. Requests are dispatched
+// to some shard by item key or shard number.
+//
+// Each backend shard thread owns one instance. So it's mutable and no
+// locking for handlers.
+struct MyDictShard {
+    dict: HashMap<String, f64>,
+}
+
+// All methods for this gRPC server.
+//
+// Compared to the local-mode, here the `self` is `&mut` because each
+// shard thread owns one server instance (MyDictShard).
 impl DictStoreShard for MyDictShard {
     fn set(&mut self, req: Entry) -> Result<SetReply, Status> {
         let old_value = self.dict.insert(req.key, req.value);
-        if old_value.is_none() {
-            TOTAL_COUNT.fetch_add(1, Ordering::Relaxed);
-        }
         Ok(SetReply { old_value })
     }
     fn get(&mut self, req: Key) -> Result<Value, Status> {
@@ -77,10 +79,7 @@ impl DictStoreShard for MyDictShard {
     }
     fn delete(&mut self, req: Key) -> Result<Value, Status> {
         match self.dict.remove(&req.key) {
-            Some(value) => {
-                TOTAL_COUNT.fetch_sub(1, Ordering::Relaxed);
-                Ok(Value { value })
-            }
+            Some(value) => Ok(Value { value }),
             None => Err(Status {
                 code: Code::NotFound,
                 message: format!("key: {}", req.key),
@@ -88,6 +87,7 @@ impl DictStoreShard for MyDictShard {
         }
     }
 
+    // list the items in the current shard only
     fn list_shard(&mut self, _req: ListShardRequest) -> Result<ListShardReply, Status> {
         Ok(ListShardReply {
             count: self.dict.len() as u32,
@@ -104,9 +104,9 @@ impl DictStoreShard for MyDictShard {
 }
 
 // some business code
-static TOTAL_COUNT: AtomicUsize = AtomicUsize::new(0);
 
-impl MyDictFront {
+// pick one channel by hashing the key
+impl MyDictDispatch {
     fn pick_req_tx(&self, key: &str) -> &DictStoreRequestTx {
         let hash = hash_key(key) as usize;
         let i = hash % self.req_txs.len();
@@ -114,6 +114,7 @@ impl MyDictFront {
     }
 }
 
+// a common hash util helper
 fn hash_key<K>(key: &K) -> u64
 where
     K: std::hash::Hash + ?Sized,
@@ -124,6 +125,7 @@ where
     hasher.finish()
 }
 
+// backend shard routine
 fn shard_routine(req_rx: DictStoreRequestRx) {
     let shard = MyDictShard {
         dict: HashMap::new(),
@@ -131,7 +133,7 @@ fn shard_routine(req_rx: DictStoreRequestRx) {
     let mut shard = DictStoreShardServer::new(shard);
 
     while let Ok(req) = req_rx.recv() {
-        shard.handle(req);
+        shard.handle(req); // handle the request!
     }
 }
 
@@ -145,13 +147,11 @@ fn main() {
     }
 
     let addr = "127.0.0.1:50051";
-    let dict = MyDictFront { req_txs };
+    let dict = MyDictDispatch { req_txs };
 
     println!("DictStoreServer listening on {}", addr);
 
     // start the server
-    // By now we have not support configurations and multiple service,
-    // so this API is simpler than tonic's.
     pajamax::Config::new()
         .add_service(DictStoreServer::new(dict))
         .serve(addr)

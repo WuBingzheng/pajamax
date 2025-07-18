@@ -34,6 +34,9 @@ pub struct DispatchRequest<Req> {
 pub struct DispatchResponse {
     pub stream_id: u32,
     pub req_data_len: usize,
+
+    // We use dynamic-dispatch `dyn` here to accept different
+    // response from multiple services in one channel.
     pub response: Response<Box<dyn ReplyEncode>>,
 }
 
