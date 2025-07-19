@@ -11,18 +11,18 @@ The usage is very similar to that of Tonic.
 
    ```toml
    [dependencies]
-   pajamax = "0.2"
+   pajamax = "0.3"
    prost = "0.1"
 
    [build-dependencies]
-   pajamax-build = "0.2"
+   pajamax-build = "0.3"
    ```
 
 2. Call `pajamax-build` in build.rs:
 
    ```rust,ignore
    fn main() -> Result<(), Box<dyn std::error::Error>> {
-       pajamax_build::compile_protos_local(&["proto/helloworld.proto"], &["."])?;
+       pajamax_build::compile_protos_in_local(&["proto/helloworld.proto"], &["."])?;
        Ok(())
    }
    ```
@@ -33,14 +33,14 @@ The usage is very similar to that of Tonic.
    fn main() -> Result<(), Box<dyn std::error::Error>> {
       prost_build::Config::new()
           // add your options here
-          .service_generator(Box::new(pajamax_build::PajamaxGen{ mode: Mode::Local }))
+          .service_generator(Box::new(pajamax_build::PajamaxGen::Local))
           .compile_protos(&["proto/helloworld.proto"], &["."])
    }
    ```
 
-3. Call `pajamax` in your source code. See the
+3. Call `pajamax` in your source code. See the local-mode example
    [`helloworld`](https://github.com/WuBingzheng/pajamax/tree/main/examples/src/helloworld.rs)
-   and [other examples](https://github.com/WuBingzheng/pajamax/tree/main/examples/)
+   and dispatch-mode example [`dict-store`](https://github.com/WuBingzheng/pajamax/tree/main/examples/src/dict_store.rs)
    for details.
 
 License: MIT
