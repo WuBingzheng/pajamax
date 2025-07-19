@@ -11,6 +11,7 @@ use crate::dispatch;
 use crate::error::Error;
 use crate::hpack_decoder::{Decoder, PathKind};
 use crate::http2::*;
+use crate::macros::*;
 use crate::response_end::ResponseEnd;
 use crate::{PajamaxService, Response};
 
@@ -28,13 +29,15 @@ where
     for c in listener.incoming() {
         // concurrent limit
         if concurrent.load(Ordering::Relaxed) >= config.max_concurrent_connections {
-            // println!("drop connection"); // TODO add log
+            error!("drop new connection for limit");
             continue;
         }
         concurrent.fetch_add(1, Ordering::Relaxed);
 
-        // configure
         let c = c?;
+        info!("new connection from {}", c.local_addr().unwrap().ip());
+
+        // configure
         c.set_read_timeout(Some(config.idle_timeout))?;
         c.set_write_timeout(Some(config.write_timeout))?;
 
@@ -44,7 +47,10 @@ where
         thread::Builder::new()
             .name(String::from("pajamax-w"))
             .spawn(move || {
-                let _ = handle(services, c, config); // TODO add log
+                match handle(services, c, config) {
+                    Ok(_) => info!("connection closed"),
+                    Err(err) => error!("connection fail: {:?}", err),
+                }
                 concurrent.fetch_sub(1, Ordering::Relaxed);
             })
             .unwrap();
@@ -82,6 +88,7 @@ pub fn handle(
     config: Config,
 ) -> Result<(), Error> {
     handshake(&mut c, &config)?;
+    trace!("handshake done");
 
     // prepare some contexts
 
@@ -113,6 +120,7 @@ pub fn handle(
     // read and parse input data
     let mut last_end = 0;
     while let Ok(len) = c.read(&mut input[last_end..]) {
+        trace!("receive data {len}");
         if len == 0 {
             // connection closed
             return Ok(());
@@ -123,14 +131,24 @@ pub fn handle(
         while let Some(frame) = Frame::parse(&input[pos..end]) {
             pos += Frame::HEAD_SIZE + frame.len; // for next loop
 
-            //println!("get frame: {:?}", frame); // TODO add log
+            trace!(
+                "get frame {:?} {:?}, len:{}, stream_id:{}",
+                frame.kind,
+                frame.flags,
+                frame.stream_id,
+                frame.len
+            );
+
             match frame.kind {
                 // call ::route() with cache
                 FrameKind::Headers => {
                     let headers_buf = frame.process_headers()?;
 
                     let (isvc, req_disc) = match hpack_decoder.find_path(headers_buf)? {
-                        PathKind::Cached(cached) => route_cache[cached],
+                        PathKind::Cached(cached) => {
+                            trace!("route cache hit: {cached}");
+                            route_cache[cached]
+                        }
                         PathKind::Plain(path) => {
                             let len0 = route_cache.len();
                             for (i, svc) in services.iter().enumerate() {
@@ -144,6 +162,10 @@ pub fn handle(
                                     String::from_utf8_lossy(&path).into(),
                                 ));
                             }
+                            trace!(
+                                "route cache new ({len0}): {}",
+                                String::from_utf8_lossy(&path)
+                            );
                             route_cache[len0]
                         }
                     };
@@ -174,6 +196,8 @@ pub fn handle(
                     };
                     let Stream { id, isvc, req_disc } = streams.remove(i).unwrap();
 
+                    trace!("handle isvc:{isvc}, req_disc:{req_disc}");
+
                     // handle request
                     services[isvc].handle(req_disc, req_buf, id, frame.len as usize)?;
                 }
@@ -188,6 +212,7 @@ pub fn handle(
             return Err(Error::InvalidHttp2("too long frame"));
         }
         if pos < end {
+            trace!("left data {}", end - pos);
             input.copy_within(pos..end, 0);
             last_end = end - pos;
         } else {

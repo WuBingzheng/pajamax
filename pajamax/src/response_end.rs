@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use crate::config::Config;
 use crate::hpack_encoder::Encoder;
 use crate::http2;
+use crate::macros::*;
 use crate::Response;
 
 pub struct ResponseEnd {
@@ -102,6 +103,12 @@ impl ResponseEnd {
         if self.output.len() == 0 {
             return Ok(());
         }
+
+        trace!(
+            "flush response count:{} len:{}",
+            self.req_count,
+            self.output.len()
+        );
 
         http2::build_window_update(self.req_data_len, &mut self.output);
 

@@ -5,6 +5,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use crate::config::Config;
 use crate::connection::local_build_response;
 use crate::error::Error;
+use crate::macros::*;
 use crate::response_end::ResponseEnd;
 use crate::status::{Code, Status};
 use crate::ReplyEncode;
@@ -65,6 +66,8 @@ pub fn dispatch<Req>(
     stream_id: u32,
     req_data_len: usize,
 ) -> Result<(), Error> {
+    trace!("dispatch request id:{stream_id}");
+
     let disp_req = DispatchRequest {
         request,
         stream_id,
@@ -75,6 +78,7 @@ pub fn dispatch<Req>(
     match req_tx.try_send(disp_req) {
         Ok(_) => Ok(()),
         Err(err) => {
+            error!("dispatch fails (stream_id:{stream_id}): {:?}", err);
             let status = match err {
                 mpsc::TrySendError::Full(_) => Status {
                     code: Code::Unavailable,
@@ -105,6 +109,7 @@ fn response_routine(mut resp_end: ResponseEnd, resp_rx: ResponseRx) -> Result<()
             }
         };
 
+        trace!("receive dispatched response {}", resp.stream_id);
         resp_end.build_box(resp.stream_id, resp.response, resp.req_data_len)?;
     }
 }

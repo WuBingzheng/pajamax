@@ -4,6 +4,7 @@ use std::net::TcpStream;
 use crate::config::*;
 use crate::error::Error;
 use crate::hpack_encoder::Encoder;
+use crate::macros::*;
 use crate::status::Status;
 
 #[repr(u8)]
@@ -217,6 +218,8 @@ pub fn build_response(
         &mut output[payload_start + 1..payload_start + 5],
     );
 
+    trace!("build response stream={stream_id}, len={msg_len}");
+
     // HEADERS
     // TODO: check `TE: trailer` in request headers
     let start = output.len();
@@ -238,6 +241,11 @@ pub fn build_status(
     hpack_encoder: &mut Encoder,
     output: &mut Vec<u8>,
 ) {
+    trace!(
+        "build failure status stream={stream_id}, code={:?}",
+        status.code
+    );
+
     // HEADERS
     let start = output.len();
     output.resize(start + Frame::HEAD_SIZE, 0);
@@ -249,7 +257,6 @@ pub fn build_status(
     Frame::build_head(
         output.len() - start - Frame::HEAD_SIZE,
         FrameKind::Headers,
-        //HeadFlags::END_HEADERS,
         HeadFlags::END_HEADERS | HeadFlags::END_STREAM,
         stream_id,
         &mut output[start..],
