@@ -28,6 +28,7 @@ where
     for c in listener.incoming() {
         // concurrent limit
         if concurrent.load(Ordering::Relaxed) >= config.max_concurrent_connections {
+            // println!("drop connection"); // TODO add log
             continue;
         }
         concurrent.fetch_add(1, Ordering::Relaxed);

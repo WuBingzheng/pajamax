@@ -12,6 +12,3 @@ categories = ["network-programming"]
 
 [dependencies]
 prost = "0.13"
-
-[build-dependencies]
-prost-build = "0.13"
