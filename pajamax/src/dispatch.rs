@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::net::TcpStream;
 use std::sync::{mpsc, Arc, Mutex};
+use std::time::Duration;
 
 use crate::config::Config;
 use crate::connection::local_build_response;
@@ -53,9 +54,10 @@ pub fn new_response_routine(c: Arc<Mutex<TcpStream>>, config: &Config) {
 
     RESP_TX.set(resp_tx);
 
+    let poll_interval = config.dispatch_poll_interval;
     std::thread::Builder::new()
         .name(String::from("pajamax-r")) // response routine
-        .spawn(move || response_routine(resp_end, resp_rx))
+        .spawn(move || response_routine(resp_end, resp_rx, poll_interval))
         .unwrap();
 }
 
@@ -96,7 +98,11 @@ pub fn dispatch<Req>(
 }
 
 // output thread
-fn response_routine(mut resp_end: ResponseEnd, resp_rx: ResponseRx) -> Result<(), Error> {
+fn response_routine(
+    mut resp_end: ResponseEnd,
+    resp_rx: ResponseRx,
+    poll_interval: Option<Duration>,
+) -> Result<(), Error> {
     loop {
         let resp = match resp_rx.try_recv() {
             Ok(resp) => resp,
@@ -105,7 +111,14 @@ fn response_routine(mut resp_end: ResponseEnd, resp_rx: ResponseRx) -> Result<()
             }
             Err(mpsc::TryRecvError::Empty) => {
                 resp_end.flush()?;
-                resp_rx.recv()? // blocking mode
+
+                match poll_interval {
+                    None => resp_rx.recv()?, // blocking mode
+                    Some(du) => {
+                        std::thread::sleep(du);
+                        continue;
+                    }
+                }
             }
         };
 

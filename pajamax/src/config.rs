@@ -69,6 +69,7 @@ pub struct Config {
     pub(crate) max_flush_size: usize,
     pub(crate) idle_timeout: Duration,
     pub(crate) write_timeout: Duration,
+    pub(crate) dispatch_poll_interval: Option<Duration>,
 }
 
 impl Config {
@@ -82,11 +83,16 @@ impl Config {
             max_flush_size: 15000,
             idle_timeout: Duration::from_secs(60),
             write_timeout: Duration::from_secs(10),
+            dispatch_poll_interval: Some(Duration::from_millis(1)),
         }
     }
 
     /// Since we create 1 (in Local mode) or 2 (in Dispatch mode) threads
     /// for each connection, so do not set this too big.
+    ///
+    /// Besides, the less connections, the high concurrent streams per
+    /// connection, the more efficient batch processing. So you'd better
+    /// keep the concurrent connections as low as possible.
     ///
     /// Default: 100
     pub fn max_concurrent_connections(self, n: usize) -> Self {
@@ -155,6 +161,28 @@ impl Config {
     pub fn write_timeout(self, d: Duration) -> Self {
         Self {
             write_timeout: d,
+            ..self
+        }
+    }
+
+    /// Set the poll-interval of response channel at the backend thread
+    /// in dispatch-mode.
+    ///
+    /// If setting `Some(Duration(0))`, then it's busy-loop.
+    ///
+    /// If setting `None`, then call blocking-mode `recv()`.
+    /// The blocking-mode `recv()` will register this thread on the channel
+    /// if empty, and wait for the sender end (the application business thread)
+    /// to wake up by syscall, which is expensive. So if you care about
+    /// the performace of the application thread, do not use this.
+    ///
+    /// Although the poll-mode has a minor impact on the performance of
+    /// business threads, it brings some more latency.
+    ///
+    /// Default: Some(1 milliseconds)
+    pub fn dispatch_poll_interval(self, d: Option<Duration>) -> Self {
+        Self {
+            dispatch_poll_interval: d,
             ..self
         }
     }
