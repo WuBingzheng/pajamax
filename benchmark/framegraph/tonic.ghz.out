@@ -1,0 +1,40 @@
+$ ./ghz  --proto=proto/helloworld.proto --call helloworld.Greeter/SayHello --insecure 127.0.0.1:50051 --cpus 12 -z1m
+
+Summary:
+  Count:	2467488
+  Total:	60.00 s
+  Slowest:	6.56 ms
+  Fastest:	0.06 ms
+  Average:	0.96 ms
+  Requests/sec:	41124.74
+
+Response time histogram:
+  0.062 [1]      |
+  0.712 [156972] |∎∎∎∎∎∎∎∎
+  1.361 [815380] |∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎
+  2.011 [25881]  |∎
+  2.661 [1143]   |
+  3.310 [207]    |
+  3.960 [142]    |
+  4.610 [152]    |
+  5.259 [65]     |
+  5.909 [9]      |
+  6.558 [48]     |
+
+Latency distribution:
+  10 % in 0.62 ms
+  25 % in 0.81 ms
+  50 % in 0.99 ms
+  75 % in 1.13 ms
+  90 % in 1.22 ms
+  95 % in 1.28 ms
+  99 % in 1.56 ms
+
+Status code distribution:
+  [OK]            2467449 responses
+  [Canceled]      2 responses
+  [Unavailable]   37 responses
+
+Error distribution:
+  [2]    rpc error: code = Canceled desc = grpc: the client connection is closing
+  [37]   rpc error: code = Unavailable desc = error reading from server: read tcp 127.0.0.1:56900->127.0.0.1:50051: use of closed network connection
