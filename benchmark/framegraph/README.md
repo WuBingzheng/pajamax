@@ -39,20 +39,20 @@ We can say that pajamax is `(65135.31/15%) / (41124.74/95%)` = 9.5X faster that 
 
 # Frame Graphs
 
-(You may need to download the SVG file to your local to browse it interactively.)
-
-The [frame graph of pajamax](./pajamax.flame.svg):
-
-- `handle()`, 7.09%, construct the response, mostly the string formating and gRPC encoding (protobuf and http2),
-- `find_path()`, 2.60%, process the request, mostly the `:path` header,
-- `flush()`, 40.32%, network output, the send() syscall,
-- `recv()`, 47.55%, network input, the recv() syscall.
+(You may need to download the SVG file to browse it interactively.)
 
 The [frame graph of tonic](./tonic.flame.svg):
 
-- `poll_read()`, 1.60%, network input, the recv() syscall,
-- `flush()`, 38.11%, network output, the send() syscall,
+- `tokio::io::poll_evented::PollEvented<E>::poll_read`, 1.60%, network input, the recv() syscall,
+- `<tokio::net::tcp::stream::TcpStream as ...>::poll_write_vectored`, 38.11%, network output, the send() syscall,
 - others, mostly tokio runtime and protocol processing (protobuf and http2).
+
+The [frame graph of pajamax](./pajamax.flame.svg):
+
+- `<helloworld::helloworld::GreeterServer<T> as ...>::handle`, 7.09%, construct the response, mostly the string formating and gRPC encoding (protobuf and http2),
+- `pajamax::hpack_decoder::Decoder::find_path`, 2.60%, process the request, mostly the `:path` header,
+- `pajamax::response_end::ResponseEnd::flush`, 40.32%, network output, the send() syscall,
+- `std::os::unix::net::datagram::UnixDatagram::recv`, 47.55%, network input, the recv() syscall.
 
 Summary:
 
@@ -68,9 +68,9 @@ Summary:
   majority of the workload, while in pajamax it only accounts for about 5%.
   This is why pajamax is so faster than tonic.
 
-- It can be confirmed that the same work in both programs is the formatting
-  of the response string (`alloc::fmt::format::format_inner()`), which
-  accounts 0.31% and 2.90% in tonic and pajamax respectively.
+- It can be confirmed that the response string formating (`alloc::fmt::format::format_inner`)
+  does the same work in both 2 programs, which accounts 0.31% and 2.90%
+  in tonic and pajamax respectively.
   The difference between the two is about 9.4 times, which is very close
   to the conclusion of the benchmark above (9.5X).
 
