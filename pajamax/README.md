@@ -60,7 +60,7 @@ performance improvement.
 
 We measured that Pajamax is up to at most 10X faster than Tonic using
 `grpc-bench` project.  See the
-[result](https://github.com/WuBingzheng/pajamax/blob/main/benchmark.md)
+[result](https://github.com/WuBingzheng/pajamax/blob/main/benchmark)
 for details.
 
 ## Conclusion
